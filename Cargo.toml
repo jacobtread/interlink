@@ -1,0 +1,11 @@
+[package]
+name = "interlink"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Jacobtread <jacobtread@gmail.com>"]
+repository = "https://github.com/PocketRelay/ServerRust"
+readme = "README.md"
+description = ""
+
+[dependencies]
