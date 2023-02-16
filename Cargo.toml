@@ -6,6 +6,6 @@ license = "MIT"
 authors = ["Jacobtread <jacobtread@gmail.com>"]
 repository = "https://github.com/PocketRelay/ServerRust"
 readme = "README.md"
-description = ""
+description = "Framework for writing async code"
 
 [dependencies]
