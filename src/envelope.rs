@@ -8,7 +8,7 @@ use crate::{
 };
 
 /// Type of a message used to communicate between services
-pub type ServiceMessage<S> = Box<dyn for<'a> EnvelopeProxy<'a, S>>;
+pub type ServiceMessage<S> = Box<dyn EnvelopeProxy<S>>;
 
 /// Actions that can be executed by the service processor
 /// after its handled an action
@@ -23,8 +23,8 @@ pub enum ServiceAction<'a> {
 
 /// Proxy for handling the contents of a boxed envelope using the
 /// provided service and service context
-pub trait EnvelopeProxy<'a, S: Service>: Send {
-    fn handle(
+pub trait EnvelopeProxy<S: Service>: Send {
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -42,13 +42,13 @@ pub struct Envelope<M: Message> {
     pub tx: Option<oneshot::Sender<M::Response>>,
 }
 
-impl<'a, S, M> EnvelopeProxy<'a, S> for Envelope<M>
+impl<S, M> EnvelopeProxy<S> for Envelope<M>
 where
     S: Handler<M>,
     S: Service,
     M: Message,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -65,13 +65,13 @@ pub struct StreamEnvelope<M> {
     pub msg: M,
 }
 
-impl<'a, S, M> EnvelopeProxy<'a, S> for StreamEnvelope<M>
+impl<S, M> EnvelopeProxy<S> for StreamEnvelope<M>
 where
     S: StreamHandler<M>,
     S: Service,
     M: Send + 'static,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -86,13 +86,13 @@ pub struct ErrorEnvelope<M> {
     pub msg: M,
 }
 
-impl<'a, S, M> EnvelopeProxy<'a, S> for ErrorEnvelope<M>
+impl<S, M> EnvelopeProxy<S> for ErrorEnvelope<M>
 where
     S: ErrorHandler<M>,
     S: Service,
     M: Send + 'static,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -116,12 +116,12 @@ where
     pub tx: Option<oneshot::Sender<R>>,
 }
 
-impl<'a, S, R> EnvelopeProxy<'a, S> for ExecutorEnvelope<S, R>
+impl<S, R> EnvelopeProxy<S> for ExecutorEnvelope<S, R>
 where
     S: Service,
     R: Sized + Send + 'static,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -167,11 +167,11 @@ where
     pub action: Box<dyn for<'a> AsyncProducer<'a, S>>,
 }
 
-impl<'a, S> EnvelopeProxy<'a, S> for AsyncEnvelope<S>
+impl<S> EnvelopeProxy<S> for AsyncEnvelope<S>
 where
     S: Service,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
@@ -184,11 +184,11 @@ where
 /// Enevelope message for triggering a service stop
 pub struct StopEnvelope;
 
-impl<'a, S> EnvelopeProxy<'a, S> for StopEnvelope
+impl<S> EnvelopeProxy<S> for StopEnvelope
 where
     S: Service,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         _service: &'a mut S,
         _ctx: &'a mut ServiceContext<S>,

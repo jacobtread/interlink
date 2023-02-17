@@ -176,14 +176,14 @@ pub enum SinkMessage<I> {
     Flush,
 }
 
-impl<'a, S, Si, I, E> EnvelopeProxy<'a, SinkService<S, Si, I, E>> for SinkMessage<I>
+impl<S, Si, I, E> EnvelopeProxy<SinkService<S, Si, I, E>> for SinkMessage<I>
 where
     S: Service + ErrorHandler<E>,
     Si: Sink<I, Error = E> + Send + Unpin + 'static,
     I: Send + 'static,
     E: Send + 'static,
 {
-    fn handle(
+    fn handle<'a>(
         self: Box<Self>,
         service: &'a mut SinkService<S, Si, I, E>,
         _ctx: &'a mut ServiceContext<SinkService<S, Si, I, E>>,

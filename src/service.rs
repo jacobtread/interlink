@@ -13,6 +13,8 @@ pub trait Service: Sized + Send + 'static {
     ///
     /// ```
     ///
+    /// use interlink::{service::Service, link::Link};
+    ///
     /// struct MyService;
     ///
     /// // Implement the service trait
@@ -38,16 +40,22 @@ pub trait Service: Sized + Send + 'static {
     /// service struct
     ///
     /// ```
+    /// use interlink::{service::Service, link::Link};
+    ///
     /// struct First {
     ///     /// Link to spawned service
     ///     second: Link<Second>,
     /// }
+    ///
+    /// impl Service for First {}
     ///
     /// /// Some other service which requires a link to our service
     /// struct Second {
     ///     /// Link to the service that owns this service
     ///     owner: Link<First>
     /// }
+    ///
+    /// impl Service for Second {}
     ///
     /// // Provide a closure which takes in the ctx    
     /// First::create(|ctx| {
