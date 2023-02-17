@@ -1,17 +1,14 @@
-use std::marker::PhantomData;
-
-use futures::{future::BoxFuture, Future};
-use tokio::sync::{mpsc, oneshot};
-
 use crate::{
     ctx::ServiceContext,
     envelope::{
-        AsyncEnvelope, Envelope, ErrorEnvelope, ExecutorEnvelope, ServiceMessage, StopEnvelope,
-        StreamEnvelope,
+        AsyncEnvelope, Envelope, EnvelopeProxy, ErrorEnvelope, ExecutorEnvelope, ServiceMessage,
+        StopEnvelope, StreamEnvelope,
     },
-    message::{ErrorHandler, Handler, Message, StreamHandler},
+    msg::{ErrorHandler, Handler, Message, StreamHandler},
     service::Service,
 };
+use futures::future::BoxFuture;
+use tokio::sync::{mpsc, oneshot};
 
 /// Links are used to send and receive messages from services
 pub struct Link<S: Service> {
@@ -52,25 +49,6 @@ where
                 action: Box::new(action),
             }))
             .ok();
-    }
-
-    /// Consumes a value provided by a stream for this service
-    pub fn consume_stream<M>(&self, value: M) -> bool
-    where
-        M: Send + 'static,
-        S: StreamHandler<M>,
-    {
-        self.tx
-            .send(Box::new(StreamEnvelope { msg: value }))
-            .is_ok()
-    }
-    /// Consumes a value provided by a stream for this service
-    pub fn consume_error<M>(&self, value: M) -> bool
-    where
-        M: Send + 'static,
-        S: ErrorHandler<M>,
-    {
-        self.tx.send(Box::new(ErrorEnvelope { msg: value })).is_ok()
     }
 
     pub async fn send<M>(&self, msg: M) -> Result<M::Response, LinkError>
@@ -127,6 +105,30 @@ where
             .map_err(|_| LinkError::Send)?;
 
         Ok(())
+    }
+
+    /// Internally used
+    ///
+    /// Consumes a value provided by a stream for this service
+    pub(crate) fn consume_stream<M>(&self, value: M) -> bool
+    where
+        M: Send + 'static,
+        S: StreamHandler<M>,
+    {
+        self.tx
+            .send(Box::new(StreamEnvelope { msg: value }))
+            .is_ok()
+    }
+
+    /// Internally used
+    ///
+    /// Consumes a value provided by a stream for this service
+    pub(crate) fn consume_error<M>(&self, value: M) -> bool
+    where
+        M: Send + 'static,
+        S: ErrorHandler<M>,
+    {
+        self.tx.send(Box::new(ErrorEnvelope { msg: value })).is_ok()
     }
 
     pub fn stop(&self) {

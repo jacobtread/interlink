@@ -25,9 +25,7 @@ pub trait StreamHandler<M: Send + 'static>: Service {
 /// Handler for accepting streams of messages for a service
 /// from streams attached to the service
 pub trait ErrorHandler<M: Send + 'static>: Service {
-    fn handle(&mut self, msg: M, ctx: &mut ServiceContext<Self>) -> ErrorAction {
-        ErrorAction::Continue
-    }
+    fn handle(&mut self, err: M, ctx: &mut ServiceContext<Self>) -> ErrorAction;
 }
 
 pub enum ErrorAction {

@@ -3,12 +3,23 @@ use tokio::sync::oneshot;
 
 use crate::{
     ctx::ServiceContext,
-    message::{ErrorAction, ErrorHandler, Handler, Message, StreamHandler},
-    service::{Service, ServiceAction},
+    msg::{ErrorAction, ErrorHandler, Handler, Message, StreamHandler},
+    service::Service,
 };
 
 /// Type of a message used to communicate between services
 pub type ServiceMessage<S> = Box<dyn for<'a> EnvelopeProxy<'a, S>>;
+
+/// Actions that can be executed by the service processor
+/// after its handled an action
+pub enum ServiceAction<'a> {
+    /// Tell service to shutdown
+    Stop,
+    /// Continue handling the next message
+    Continue,
+    /// Ask the service to execute a future on the service
+    Execute(BoxFuture<'a, ()>),
+}
 
 /// Proxy for handling the contents of a boxed envelope using the
 /// provided service and service context

@@ -1,10 +1,10 @@
 //! Name reserved
 
-mod ctx;
+pub mod ctx;
 mod envelope;
-mod link;
-mod message;
-mod service;
+pub mod link;
+pub mod msg;
+pub mod service;
 
 #[cfg(test)]
 mod test {
@@ -14,7 +14,7 @@ mod test {
 
     use crate::{
         link::Link,
-        message::{Handler, Message},
+        msg::{Handler, Message},
         service::{self, Service},
     };
 

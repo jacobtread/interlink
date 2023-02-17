@@ -1,14 +1,12 @@
-use std::marker::PhantomData;
-
-use futures::{Sink, SinkExt, Stream, StreamExt};
-use tokio::sync::mpsc;
-
 use crate::{
-    envelope::{EnvelopeProxy, ServiceMessage},
-    link::Link,
-    message::{ErrorHandler, Handler, Message, StreamHandler},
-    service::{Service, ServiceAction},
+    envelope::{EnvelopeProxy, ServiceAction, ServiceMessage},
+    link::{Link, LinkError},
+    msg::{ErrorHandler, StreamHandler},
+    service::Service,
 };
+use futures::{Sink, SinkExt, Stream, StreamExt};
+use std::marker::PhantomData;
+use tokio::sync::mpsc;
 
 /// Backing context for a service which handles storing the
 /// reciever for messaging and the original link for spawning
@@ -39,6 +37,10 @@ where
         tokio::spawn(proc.process());
     }
 
+    /// Attaches a sink to this service and provides a link to the
+    /// service so that it can be used to write messages
+    ///
+    /// `sink` The sink to attach
     pub fn attach_sink<Si, I, E>(&self, sink: Si) -> SinkLink<S, Si, I, E>
     where
         S: ErrorHandler<E>,
@@ -54,7 +56,8 @@ where
         .start()
     }
 
-    pub fn new() -> ServiceContext<S> {
+    /// Creates a new service context and the initial link
+    pub(crate) fn new() -> ServiceContext<S> {
         let (tx, rx) = mpsc::unbounded_channel();
         let link = Link { tx };
 
@@ -67,6 +70,7 @@ where
             match action {
                 ServiceAction::Stop => break,
                 ServiceAction::Continue => continue,
+                // Execute tasks that require blocking the processing
                 ServiceAction::Execute(fut) => fut.await,
             }
         }
@@ -126,6 +130,7 @@ where
 
 type SinkLink<S, Si, I, E> = Link<SinkService<S, Si, I, E>>;
 
+/// Implement the sinker service
 impl<S, Si, I, E> Service for SinkService<S, Si, I, E>
 where
     S: Service + ErrorHandler<E>,
@@ -135,7 +140,41 @@ where
 {
 }
 
-pub struct SinkMessage<I>(I);
+/// Additional logic for sink links
+impl<S, Si, I, E> Link<SinkService<S, Si, I, E>>
+where
+    S: Service + ErrorHandler<E>,
+    Si: Sink<I, Error = E> + Send + Unpin + 'static,
+    I: Send + 'static,
+    E: Send + 'static,
+{
+    pub fn sink(&self, item: I) -> Result<(), LinkError> {
+        self.tx
+            .send(Box::new(SinkMessage::Send(item)))
+            .map_err(|_| LinkError::Send)
+    }
+
+    pub fn feed(&self, item: I) -> Result<(), LinkError> {
+        self.tx
+            .send(Box::new(SinkMessage::Feed(item)))
+            .map_err(|_| LinkError::Send)
+    }
+
+    pub fn flush(&self) -> Result<(), LinkError> {
+        self.tx
+            .send(Box::new(SinkMessage::Flush))
+            .map_err(|_| LinkError::Send)
+    }
+}
+
+pub enum SinkMessage<I> {
+    /// Immediately write a message using the sink
+    Send(I),
+    /// Feed an item to be written later on flush
+    Feed(I),
+    /// Flush all the items in the sink
+    Flush,
+}
 
 impl<'a, S, Si, I, E> EnvelopeProxy<'a, SinkService<S, Si, I, E>> for SinkMessage<I>
 where
@@ -150,7 +189,13 @@ where
         _ctx: &'a mut ServiceContext<SinkService<S, Si, I, E>>,
     ) -> ServiceAction<'a> {
         ServiceAction::Execute(Box::pin(async move {
-            if let Err(err) = service.sink.send(self.0).await {
+            let result = match *self {
+                SinkMessage::Send(value) => service.sink.send(value).await,
+                SinkMessage::Feed(value) => service.sink.feed(value).await,
+                SinkMessage::Flush => service.sink.flush().await,
+            };
+
+            if let Err(err) = result {
                 service.link.consume_error(err);
             }
         }))
