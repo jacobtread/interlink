@@ -1,6 +1,10 @@
 use tokio::sync::mpsc;
 
-use crate::{envelope::ServiceMessage, link::Link, service::Service};
+use crate::{
+    envelope::ServiceMessage,
+    link::Link,
+    service::{Service, ServiceAction},
+};
 
 /// Backing context for a service which handles storing the
 /// reciever for messaging and the original link for spawning
@@ -16,5 +20,25 @@ impl<S> ServiceContext<S>
 where
     S: Service,
 {
-    pub async fn process(&mut self, service: &mut S) {}
+    pub fn new() -> ServiceContext<S> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let link = Link { tx };
+
+        ServiceContext { rx, link }
+    }
+
+    pub async fn process(&mut self, service: &mut S) {
+        while let Some(msg) = self.rx.recv().await {
+            let action = msg.handle(service, self);
+            match action {
+                ServiceAction::Stop => break,
+                ServiceAction::Continue => continue,
+                ServiceAction::Execute(fut) => fut.await,
+            }
+        }
+    }
+
+    pub fn link(&self) -> Link<S> {
+        self.link.clone()
+    }
 }

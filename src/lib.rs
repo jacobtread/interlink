@@ -8,10 +8,13 @@ mod service;
 
 #[cfg(test)]
 mod test {
-    use tokio::sync::mpsc;
+    use std::time::Duration;
+
+    use tokio::{sync::mpsc, time::sleep};
 
     use crate::{
         link::Link,
+        message::{Handler, Message},
         service::{self, Service},
     };
 
@@ -21,16 +24,38 @@ mod test {
 
     impl Service for TestService {}
 
-    #[test]
-    fn test() {
-        let (tx, rx) = mpsc::unbounded_channel();
-        let link = Link { tx } as Link<TestService>;
+    struct TestMessage;
 
-        link.wait(|service, ctx| {
+    impl Message for TestMessage {
+        type Response = String;
+    }
+
+    impl Handler<TestMessage> for TestService {
+        fn handle(
+            &mut self,
+            _msg: TestMessage,
+            _ctx: &mut crate::ctx::ServiceContext<Self>,
+        ) -> String {
+            "got response from TestService handler".to_string()
+        }
+    }
+    #[tokio::test]
+    async fn test() {
+        let link = TestService {
+            test: "Welcome to linking".to_string(),
+        }
+        .start();
+        link.wait(|service, _ctx| {
             Box::pin(async move {
-                let s = service.test.clone();
+                println!("Waiting async using the TestService processor");
+                sleep(Duration::from_millis(1000)).await;
+                println!("{}", service.test)
             })
         });
+
+        let resp = link.send(TestMessage).await.unwrap();
+        println!("GOT RESPONSE: {}", resp);
+
         println!("Test");
     }
 }

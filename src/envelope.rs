@@ -1,4 +1,4 @@
-use futures::{future::BoxFuture, Future};
+use futures::future::BoxFuture;
 use tokio::sync::oneshot;
 
 use crate::{
@@ -12,7 +12,7 @@ pub type ServiceMessage<S> = Box<dyn for<'a> EnvelopeProxy<'a, S>>;
 
 /// Proxy for handling the contents of a boxed envelope using the
 /// provided service and service context
-pub trait EnvelopeProxy<'a, S: Service> {
+pub trait EnvelopeProxy<'a, S: Service>: Send {
     fn handle(
         self: Box<Self>,
         service: &'a mut S,
@@ -33,7 +33,7 @@ pub struct Envelope<M: Message> {
 
 impl<'a, S, M> EnvelopeProxy<'a, S> for Envelope<M>
 where
-    S: Handler<'a, M>,
+    S: Handler<M>,
     S: Service,
     M: Message,
 {
@@ -82,7 +82,7 @@ where
 
 /// Producer which takes mutable access to the service and its
 /// context and produces a future which makes use of them
-pub trait AsyncProducer<'a, S: Service> {
+pub trait AsyncProducer<'a, S: Service>: Send {
     /// Function for producing the actual future
     fn produce(
         self: Box<Self>,
@@ -94,7 +94,7 @@ pub trait AsyncProducer<'a, S: Service> {
 impl<'a, S, F> AsyncProducer<'a, S> for F
 where
     S: Service,
-    F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, ()>,
+    F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, ()> + Send,
 {
     fn produce(
         self: Box<Self>,

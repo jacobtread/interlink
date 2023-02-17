@@ -5,20 +5,26 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     ctx::ServiceContext,
-    envelope::{
-        AsyncEnvelope, AsyncProducer, Envelope, ExecutorEnvelope, ServiceMessage, StopEnvelope,
-    },
+    envelope::{AsyncEnvelope, Envelope, ExecutorEnvelope, ServiceMessage, StopEnvelope},
     message::{Handler, Message},
     service::Service,
 };
 
 /// Links are used to send and receive messages from services
-#[derive(Clone)]
 pub struct Link<S: Service> {
     /// Sender for sending messages to the connected service
-    pub tx: mpsc::UnboundedSender<ServiceMessage<S>>,
+    pub(crate) tx: mpsc::UnboundedSender<ServiceMessage<S>>,
 }
 
+impl<S: Service> Clone for Link<S> {
+    fn clone(&self) -> Self {
+        Self {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum LinkError {
     /// Failed to send message to service
     Send,
@@ -35,7 +41,8 @@ where
     /// the action is being awaited messages will not be accepted
     pub fn wait<F>(&self, action: F)
     where
-        for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, ()> + 'static,
+        for<'a> F:
+            FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, ()> + Send + 'static,
     {
         self.tx
             .send(Box::new(AsyncEnvelope {
@@ -47,7 +54,7 @@ where
     pub async fn send<M>(&self, msg: M) -> Result<M::Response, LinkError>
     where
         M: Message,
-        for<'a> S: Handler<'a, M>,
+        S: Handler<M>,
     {
         let (tx, rx) = oneshot::channel();
 
@@ -61,7 +68,7 @@ where
     pub fn do_send<M>(&self, msg: M) -> Result<(), LinkError>
     where
         M: Message,
-        for<'a> S: Handler<'a, M>,
+        S: Handler<M>,
     {
         self.tx
             .send(Box::new(Envelope { msg, tx: None }))
