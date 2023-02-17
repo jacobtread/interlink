@@ -1,5 +1,5 @@
 use crate::{
-    envelope::{EnvelopeProxy, ServiceAction, ServiceMessage},
+    envelope::{EnvelopeProxy, ErrorEnvelope, ServiceAction, ServiceMessage, StreamEnvelope},
     link::{Link, LinkError},
     msg::{ErrorHandler, StreamHandler},
     service::Service,
@@ -103,7 +103,7 @@ where
 {
     pub async fn process(mut self) {
         while let Some(msg) = self.stream.next().await {
-            if !self.link.consume_stream(msg) {
+            if self.link.tx(StreamEnvelope::new(msg)).is_err() {
                 // Assocated service has ended stop processing
                 return;
             }
@@ -196,7 +196,7 @@ where
             };
 
             if let Err(err) = result {
-                service.link.consume_error(err);
+                service.link.tx(ErrorEnvelope::new(err)).ok();
             }
         }))
     }
