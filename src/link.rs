@@ -5,8 +5,11 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     ctx::ServiceContext,
-    envelope::{AsyncEnvelope, Envelope, ExecutorEnvelope, ServiceMessage, StopEnvelope},
-    message::{Handler, Message},
+    envelope::{
+        AsyncEnvelope, Envelope, ErrorEnvelope, ExecutorEnvelope, ServiceMessage, StopEnvelope,
+        StreamEnvelope,
+    },
+    message::{ErrorHandler, Handler, Message, StreamHandler},
     service::Service,
 };
 
@@ -49,6 +52,25 @@ where
                 action: Box::new(action),
             }))
             .ok();
+    }
+
+    /// Consumes a value provided by a stream for this service
+    pub fn consume_stream<M>(&self, value: M) -> bool
+    where
+        M: Send + 'static,
+        S: StreamHandler<M>,
+    {
+        self.tx
+            .send(Box::new(StreamEnvelope { msg: value }))
+            .is_ok()
+    }
+    /// Consumes a value provided by a stream for this service
+    pub fn consume_error<M>(&self, value: M) -> bool
+    where
+        M: Send + 'static,
+        S: ErrorHandler<M>,
+    {
+        self.tx.send(Box::new(ErrorEnvelope { msg: value })).is_ok()
     }
 
     pub async fn send<M>(&self, msg: M) -> Result<M::Response, LinkError>

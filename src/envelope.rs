@@ -3,7 +3,7 @@ use tokio::sync::oneshot;
 
 use crate::{
     ctx::ServiceContext,
-    message::{Handler, Message},
+    message::{ErrorAction, ErrorHandler, Handler, Message, StreamHandler},
     service::{Service, ServiceAction},
 };
 
@@ -47,6 +47,49 @@ where
             tx.send(res).ok();
         }
         ServiceAction::Continue
+    }
+}
+pub struct StreamEnvelope<M> {
+    /// The actual message wrapped in this envelope
+    pub msg: M,
+}
+
+impl<'a, S, M> EnvelopeProxy<'a, S> for StreamEnvelope<M>
+where
+    S: StreamHandler<M>,
+    S: Service,
+    M: Send + 'static,
+{
+    fn handle(
+        self: Box<Self>,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> ServiceAction<'a> {
+        service.handle(self.msg, ctx);
+        ServiceAction::Continue
+    }
+}
+
+pub struct ErrorEnvelope<M> {
+    /// The actual message wrapped in this envelope
+    pub msg: M,
+}
+
+impl<'a, S, M> EnvelopeProxy<'a, S> for ErrorEnvelope<M>
+where
+    S: ErrorHandler<M>,
+    S: Service,
+    M: Send + 'static,
+{
+    fn handle(
+        self: Box<Self>,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> ServiceAction<'a> {
+        match service.handle(self.msg, ctx) {
+            ErrorAction::Continue => ServiceAction::Continue,
+            ErrorAction::Stop => ServiceAction::Stop,
+        }
     }
 }
 
