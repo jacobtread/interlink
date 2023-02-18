@@ -5,10 +5,7 @@ use crate::{
     service::Service,
 };
 use futures::future::BoxFuture;
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::spawn_local,
-};
+use tokio::sync::{mpsc, oneshot};
 
 /// Links are used to send and receive messages from services
 /// you will receive a link when you start a service or through

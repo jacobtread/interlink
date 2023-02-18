@@ -30,10 +30,7 @@ where
     /// Spawns this servuce  into a new tokio task
     /// where it will then begin processing messages
     ///
-    /// This should not be called manually use
-    /// `start` or `create` instead
-    ///
-    /// `ctx` The service context
+    /// `service` The service
     pub(crate) fn spawn(mut self, mut service: S) {
         tokio::spawn(async move {
             service.started(&mut self);
@@ -44,6 +41,10 @@ where
         });
     }
 
+    /// Processing loop for the service handles recieved messages and
+    /// executing actions from the message handle results
+    ///
+    /// `service` The service this context is processing for
     async fn process(&mut self, service: &mut S) {
         while let Some(msg) = self.rx.recv().await {
             let action = msg.handle(service, self);
@@ -54,6 +55,13 @@ where
                 ServiceAction::Execute(fut) => fut.await,
             }
         }
+    }
+
+    /// Stop the context directly by closing the reciever the
+    /// reciever will drain any existing messages until there
+    /// are none remaining
+    pub fn stop(&mut self) {
+        self.rx.close()
     }
 
     pub fn link(&self) -> Link<S> {
