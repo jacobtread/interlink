@@ -5,7 +5,7 @@ use crate::{ctx::ServiceContext, service::Service};
 pub trait Message: Send + 'static {
     /// The type of the response that handlers will produce
     /// when handling this message
-    type Response: Sized + Send + 'static;
+    type Response: Send + 'static;
 }
 
 /// Handler implementation for allowing a service to handle a specific
@@ -18,13 +18,13 @@ pub trait Handler<M: Message>: Service {
 
 /// Handler for accepting streams of messages for a service
 /// from streams attached to the service
-pub trait StreamHandler<M: Send + 'static>: Service {
+pub trait StreamHandler<M: Send>: Service {
     fn handle(&mut self, msg: M, ctx: &mut ServiceContext<Self>);
 }
 
 /// Handler for accepting streams of messages for a service
 /// from streams attached to the service
-pub trait ErrorHandler<M: Send + 'static>: Service {
+pub trait ErrorHandler<M: Send>: Service {
     fn handle(&mut self, err: M, ctx: &mut ServiceContext<Self>) -> ErrorAction;
 }
 

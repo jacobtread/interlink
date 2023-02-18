@@ -45,13 +45,14 @@ mod test {
             test: "Welcome to linking".to_string(),
         }
         .start();
-        link.wait(|service, _ctx| {
+        link.do_wait(|service, _ctx| {
             Box::pin(async move {
                 println!("Waiting async using the TestService processor");
                 sleep(Duration::from_millis(1000)).await;
                 println!("{}", service.test)
             })
-        });
+        })
+        .ok();
 
         let resp = link.send(TestMessage).await.unwrap();
         println!("GOT RESPONSE: {}", resp);

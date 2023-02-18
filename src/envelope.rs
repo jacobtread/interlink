@@ -3,8 +3,8 @@ use crate::{
     msg::{ErrorAction, ErrorHandler, Handler, Message, StreamHandler},
     service::Service,
 };
-use futures::future::BoxFuture;
-use std::marker::PhantomData;
+use futures::{future::BoxFuture, Future, FutureExt};
+use std::task::ready;
 use tokio::sync::oneshot;
 
 /// Type of a message used to communicate between services
@@ -19,6 +19,41 @@ pub enum ServiceAction<'a> {
     Continue,
     /// Ask the service to execute a future on the service
     Execute(BoxFuture<'a, ()>),
+}
+
+struct ExecuteFuture<'a, R> {
+    fut: BoxFuture<'a, R>,
+    tx: Option<oneshot::Sender<R>>,
+}
+
+impl<'a, R> ExecuteFuture<'a, R>
+where
+    R: Send + 'static,
+{
+    pub fn new(fut: BoxFuture<'a, R>, tx: Option<oneshot::Sender<R>>) -> BoxFuture<'a, ()> {
+        Box::pin(ExecuteFuture { fut, tx })
+    }
+}
+
+impl<'a, R> Future for ExecuteFuture<'a, R>
+where
+    R: Send,
+{
+    type Output = ();
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let this = self.get_mut();
+        let result = ready!(this.fut.poll_unpin(cx));
+
+        if let Some(tx) = this.tx.take() {
+            tx.send(result).ok();
+        }
+
+        std::task::Poll::Ready(())
+    }
 }
 
 /// Proxy for handling the contents of a boxed envelope using the
@@ -72,37 +107,12 @@ where
         ServiceAction::Continue
     }
 }
-pub(crate) struct StreamEnvelope<M> {
-    /// The actual message wrapped in this envelope
-    msg: M,
-}
-
-impl<M> StreamEnvelope<M> {
-    pub fn new(msg: M) -> Box<StreamEnvelope<M>> {
-        Box::new(StreamEnvelope { msg })
-    }
-}
-impl<S, M> EnvelopeProxy<S> for StreamEnvelope<M>
-where
-    S: StreamHandler<M>,
-    S: Service,
-    M: Send + 'static,
-{
-    fn handle<'a>(
-        self: Box<Self>,
-        service: &'a mut S,
-        ctx: &'a mut ServiceContext<S>,
-    ) -> ServiceAction<'a> {
-        service.handle(self.msg, ctx);
-        ServiceAction::Continue
-    }
-}
 
 /// Trait implemented by an action which can be executed on
 /// a service and its service context and produce a response
 pub trait ServiceExecutor<S: Service>: Send {
     /// The result value produced from this execution
-    type Response: Sized + Send + 'static;
+    type Response: Send;
 
     /// Executor for executing some logic on the service and
     /// its context
@@ -117,7 +127,7 @@ impl<F, S, R> ServiceExecutor<S> for F
 where
     S: Service,
     for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> R + Send,
-    R: Sized + Send + 'static,
+    R: Send,
 {
     type Response = R;
 
@@ -174,50 +184,75 @@ where
 
 /// Producer which takes mutable access to the service and its
 /// context and produces a future which makes use of them
-pub trait AsyncProducer<S: Service>: Send {
+pub trait FutureProducer<S: Service>: Send {
+    type Response: Send + 'static;
+
     /// Function for producing the actual future
-    fn produce<'a>(self, service: &'a mut S, ctx: &'a mut ServiceContext<S>) -> BoxFuture<'a, ()>;
+    fn produce<'a>(
+        self,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> BoxFuture<'a, Self::Response>;
 }
 
-impl<S, F> AsyncProducer<S> for F
+/// Implementation for using a closure which takes the service
+/// and context to produce a box future as a async producer
+///
+/// ```
+/// link.wait(|service, ctx| {
+///     Box::Pin(async move {
+///
+///     })
+/// })
+/// ```
+impl<S, F, R> FutureProducer<S> for F
 where
     S: Service,
-    for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, ()> + Send,
+    for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, R> + Send,
+    R: Send + 'static,
 {
-    fn produce<'a>(self, service: &'a mut S, ctx: &'a mut ServiceContext<S>) -> BoxFuture<'a, ()> {
+    type Response = R;
+
+    fn produce<'a>(
+        self,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> BoxFuture<'a, Self::Response> {
         self(service, ctx)
     }
 }
 
-pub(crate) struct AsyncEnvelope<S, P>
+pub(crate) struct FutureEnvelope<S, P>
 where
     S: Service,
-    P: AsyncProducer<S>,
+    P: FutureProducer<S>,
 {
     /// Action to execute on the actor
     producer: P,
 
-    /// Marker for the service type
-    _marker: PhantomData<S>,
+    tx: Option<oneshot::Sender<P::Response>>,
 }
 
-impl<S, P> AsyncEnvelope<S, P>
+impl<S, P> FutureEnvelope<S, P>
 where
     S: Service,
-    P: AsyncProducer<S>,
+    P: FutureProducer<S>,
 {
-    pub(crate) fn new(action: P) -> Box<AsyncEnvelope<S, P>> {
-        Box::new(AsyncEnvelope {
+    pub(crate) fn new(
+        action: P,
+        tx: Option<oneshot::Sender<P::Response>>,
+    ) -> Box<FutureEnvelope<S, P>> {
+        Box::new(FutureEnvelope {
             producer: action,
-            _marker: PhantomData,
+            tx,
         })
     }
 }
 
-impl<S, P> EnvelopeProxy<S> for AsyncEnvelope<S, P>
+impl<S, P> EnvelopeProxy<S> for FutureEnvelope<S, P>
 where
     S: Service,
-    P: AsyncProducer<S>,
+    P: FutureProducer<S>,
 {
     fn handle<'a>(
         self: Box<Self>,
@@ -225,32 +260,60 @@ where
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
         let fut = self.producer.produce(service, ctx);
-        ServiceAction::Execute(fut)
+        ServiceAction::Execute(ExecuteFuture::new(fut, self.tx))
     }
 }
 
-pub(crate) struct ErrorEnvelope<M> {
+/// Envelope message used internally for providing messages
+/// recieved from streams to their respective stream handler
+pub(crate) struct StreamEnvelope<M> {
     /// The actual message wrapped in this envelope
-    error: M,
+    msg: M,
 }
 
-impl<M> ErrorEnvelope<M> {
-    pub fn new(error: M) -> Box<ErrorEnvelope<M>> {
-        Box::new(ErrorEnvelope { error })
+impl<M> StreamEnvelope<M> {
+    pub fn new(msg: M) -> Box<StreamEnvelope<M>> {
+        Box::new(StreamEnvelope { msg })
     }
 }
 
-impl<S, M> EnvelopeProxy<S> for ErrorEnvelope<M>
+impl<S, M> EnvelopeProxy<S> for StreamEnvelope<M>
 where
-    S: Service + ErrorHandler<M>,
-    M: Send + 'static,
+    S: StreamHandler<M>,
+    S: Service,
+    M: Send,
 {
     fn handle<'a>(
         self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
-        match service.handle(self.error, ctx) {
+        service.handle(self.msg, ctx);
+        ServiceAction::Continue
+    }
+}
+
+/// Envelope message used internally for providing error
+/// messages to their assocated error handler
+pub(crate) struct ErrorEnvelope<M>(M);
+
+impl<M> ErrorEnvelope<M> {
+    pub(crate) fn new(error: M) -> Box<ErrorEnvelope<M>> {
+        Box::new(ErrorEnvelope(error))
+    }
+}
+
+impl<S, M> EnvelopeProxy<S> for ErrorEnvelope<M>
+where
+    S: Service + ErrorHandler<M>,
+    M: Send,
+{
+    fn handle<'a>(
+        self: Box<Self>,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> ServiceAction<'a> {
+        match service.handle(self.0, ctx) {
             ErrorAction::Continue => ServiceAction::Continue,
             ErrorAction::Stop => ServiceAction::Stop,
         }

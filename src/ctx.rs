@@ -59,7 +59,7 @@ where
     /// Creates a new service context and the initial link
     pub(crate) fn new() -> ServiceContext<S> {
         let (tx, rx) = mpsc::unbounded_channel();
-        let link = Link { tx };
+        let link = Link(tx);
 
         ServiceContext { rx, link }
     }
@@ -149,21 +149,15 @@ where
     E: Send + 'static,
 {
     pub fn sink(&self, item: I) -> Result<(), LinkError> {
-        self.tx
-            .send(Box::new(SinkMessage::Send(item)))
-            .map_err(|_| LinkError::Send)
+        self.tx(Box::new(SinkMessage::Send(item)))
     }
 
     pub fn feed(&self, item: I) -> Result<(), LinkError> {
-        self.tx
-            .send(Box::new(SinkMessage::Feed(item)))
-            .map_err(|_| LinkError::Send)
+        self.tx(Box::new(SinkMessage::Feed(item)))
     }
 
     pub fn flush(&self) -> Result<(), LinkError> {
-        self.tx
-            .send(Box::new(SinkMessage::Flush))
-            .map_err(|_| LinkError::Send)
+        self.tx(Box::new(SinkMessage::Flush))
     }
 }
 
