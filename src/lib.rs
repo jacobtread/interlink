@@ -26,13 +26,13 @@ mod test {
     }
 
     impl Handler<TestMessage> for TestService {
-        type Response = MessageResponse<String>;
+        type Response = MessageResponse<TestMessage>;
 
         fn handle(
             &mut self,
             _msg: TestMessage,
             _ctx: &mut crate::ctx::ServiceContext<Self>,
-        ) -> MessageResponse<String> {
+        ) -> MessageResponse<TestMessage> {
             MessageResponse("got response from TestService handler".to_string())
         }
     }

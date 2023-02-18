@@ -219,8 +219,10 @@ where
     /// }
     ///
     /// impl Handler<MyMessage> for Test {
-    ///     fn handle(&mut self, msg: MyMessage, ctx: &mut ServiceContext<Self>) -> String{
-    ///         msg.value
+    ///     type Response = MessageResponse<MyMessage>;
+    ///
+    ///     fn handle(&mut self, msg: MyMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
+    ///         MessageResponse(msg.value)
     ///     }
     /// }
     ///
@@ -269,6 +271,8 @@ where
     /// }
     ///
     /// impl Handler<MyMessage> for Test {
+    ///     type Response = ();
+    ///
     ///     fn handle(&mut self, msg: MyMessage, ctx: &mut ServiceContext<Self>) {
     ///         assert_eq!(&msg.value, "Test123");
     ///     }

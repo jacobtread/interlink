@@ -14,11 +14,53 @@ pub trait Message: Send + 'static {
     type Response: Send + 'static;
 }
 
-/// Response type from a handler which just returns the
-/// default message value
-pub struct MessageResponse<M>(pub M);
+/// Response type from a handler which directly sends a response
+/// for a specific message
+///
+/// ```
+/// use interlink::prelude::*;
+///
+/// struct Test { value: String };
+///
+/// impl Service for Test {}
+///
+/// struct TestMessage {
+///     value: String,
+/// }
+///
+/// impl Message for TestMessage {
+///     type Response = String;
+/// }
+///
+/// impl Handler<TestMessage> for Test {
+///     type Response = MessageResponse<TestMessage>;
+///
+///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
+///         self.value = msg.value;
+///
+///         MessageResponse("Response".to_string())
+///     }
+/// }
+///
+/// #[tokio::test]
+/// async fn test() {
+///     let service = Test { value: "Default".to_string() };
+///     let link = service.start();
+///     
+///     let res: String = link
+///         .send(TestMessage {
+///             value: "Example".to_string()
+///         })
+///         .await
+///         .unwrap();
+///     
+///     assert_eq!(&res, "Response")    
+///
+/// }
+/// ```
+pub struct MessageResponse<M: Message>(pub M::Response);
 
-impl<S, M> ResponseHandler<S, M> for MessageResponse<M::Response>
+impl<S, M> ResponseHandler<S, M> for MessageResponse<M>
 where
     S: Service,
     M: Message,
@@ -46,7 +88,61 @@ where
 
 /// Response type from a handler containing a future that
 /// is to be spawned into a another task where the response
-/// will then be sent to the sender
+/// will then be sent to the sender. This should be used
+/// when the response is computed in a future that can run
+/// independently from the service
+///
+///
+/// ```
+/// use interlink::prelude::*;
+/// use std::time::Duration;
+/// use tokio::time::sleep;
+///
+/// struct Test { value: String };
+///
+/// impl Service for Test {}
+///
+/// struct TestMessage {
+///     value: String,
+/// }
+///
+/// impl Message for TestMessage {
+///     type Response = String;
+/// }
+///
+/// impl Handler<TestMessage> for Test {
+///     type Response = FutureResponse<TestMessage>;
+///
+///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
+///         // Additional logic can be run here before the future
+///         // response is created
+///
+///         FutureResponse::new(Box::pin(async move {
+///             // Some future that must be polled in another task
+///             sleep(Duration::from_millis(1000)).await;
+///
+///             // You can return the response type of the message here
+///             "Response".to_string()
+///        }))
+///     }
+/// }
+///
+/// #[tokio::test]
+/// async fn test() {
+///     let service = Test { value: "Default".to_string() };
+///     let link = service.start();
+///     
+///     let res: String = link
+///         .send(TestMessage {
+///             value: "Example".to_string()
+///         })
+///         .await
+///         .unwrap();
+///     
+///     assert_eq!(&res, "Response")    
+///
+/// }
+/// ```
 pub struct FutureResponse<M: Message> {
     future: BoxFuture<'static, M::Response>,
 }
@@ -76,7 +172,65 @@ where
 }
 
 /// Response type from a handler where a future must be
-/// awaited on the processing loop of the service
+/// awaited on the processing loop of the service. While
+/// the result of this future is being processed no other
+/// messages will be handled
+///
+/// ```
+/// use interlink::prelude::*;
+/// use std::time::Duration;
+/// use tokio::time::sleep;
+///
+/// struct Test { value: String };
+///
+/// impl Service for Test {}
+///
+/// struct TestMessage {
+///     value: String,
+/// }
+///
+/// impl Message for TestMessage {
+///     type Response = String;
+/// }
+///
+/// impl Handler<TestMessage> for Test {
+///     type Response = ServiceFutureResponse<Self, TestMessage>;
+///
+///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
+///         // Additional logic can be run here before the future
+///         // response is created
+///
+///         ServiceFutureResponse::new(move |service: &mut Test, ctx| {
+///             Box::pin(async move {
+///                 // Some future that must be polled on the service loop
+///                 sleep(Duration::from_millis(1000)).await;
+///
+///                 // Make use of the mutable access to service
+///                 service.value = msg.value.clone();
+///
+///                 // You can return the response type of the message here
+///                 "Response".to_string()
+///             })
+///         })
+///     }
+/// }
+///
+/// #[tokio::test]
+/// async fn test() {
+///     let service = Test { value: "Default".to_string() };
+///     let link = service.start();
+///     
+///     let res: String = link
+///         .send(TestMessage {
+///             value: "Example".to_string()
+///         })
+///         .await
+///         .unwrap();
+///     
+///     assert_eq!(&res, "Response")    
+///
+/// }
+/// ```
 pub struct ServiceFutureResponse<S, M: Message> {
     producer: Box<dyn FutureProducer<S, Response = M::Response>>,
 }
@@ -86,6 +240,12 @@ where
     S: Service,
     M: Message,
 {
+    /// Creates a new service future response. Takes a fn which
+    /// accepts mutable access to the service and its context
+    /// and returns a boxed future with the same lifetime as the
+    /// borrow
+    ///
+    /// `producer` The producer fn
     pub fn new<P>(producer: P) -> ServiceFutureResponse<S, M>
     where
         for<'a> P: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, M::Response>
@@ -98,6 +258,8 @@ where
     }
 }
 
+/// The response handler for service future responses passes on
+/// the producer in an enevelope to be handled by the context
 impl<S, M> ResponseHandler<S, M> for ServiceFutureResponse<S, M>
 where
     S: Service,
@@ -119,6 +281,7 @@ pub trait ResponseHandler<S: Service, M: Message>: Send + 'static {
 /// Handler implementation for allowing a service to handle a specific
 /// message type
 pub trait Handler<M: Message>: Service {
+    /// The respose type this handler will use
     type Response: ResponseHandler<Self, M>;
 
     /// Handler for processing the message using the current service
