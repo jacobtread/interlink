@@ -53,7 +53,24 @@ where
         ServiceContext { rx, link }
     }
 
-    pub async fn process(&mut self, service: &mut S) {
+    /// Spawns this servuce  into a new tokio task
+    /// where it will then begin processing messages
+    ///
+    /// This should not be called manually use
+    /// `start` or `create` instead
+    ///
+    /// `ctx` The service context
+    pub(crate) fn spawn(mut self, mut service: S) {
+        tokio::spawn(async move {
+            service.started(&mut self);
+
+            self.process(&mut service).await;
+
+            service.stopping();
+        });
+    }
+
+    pub(crate) async fn process(&mut self, service: &mut S) {
         while let Some(msg) = self.rx.recv().await {
             let action = msg.handle(service, self);
             match action {
@@ -117,17 +134,24 @@ where
     }
 }
 
-/// Service for handling a Sink and its writing this is
-/// a lightweight service which has its own link type
-/// and doesn't implement normal service logic to be more lightweight
+/// Service for handling a Sink and its writing this is a
+/// lightweight service which has its own link type and doesn't
+/// implement normal service logic to be more lightweight
 struct SinkService<S, Si, I> {
     sink: Si,
     link: Link<S>,
     rx: mpsc::UnboundedReceiver<SinkMessage<I>>,
 }
 
-/// Dedicated link type for sinks
+/// Dedicated link type for sinks. This is cheaply clonable
+/// so you can clone it to use it in multiple places.
 pub struct SinkLink<I>(mpsc::UnboundedSender<SinkMessage<I>>);
+
+impl<I> Clone for SinkLink<I> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 
 /// Messages used to communicate with the sink
 enum SinkMessage<I> {
@@ -174,7 +198,11 @@ where
     Si::Error: Send + 'static,
     I: Send + 'static,
 {
-    pub fn start(sink: Si, link: Link<S>) -> SinkLink<I> {
+    /// Starts a new sink service. You should attach this
+    ///
+    /// `sink` The sink to send and feed the items into
+    /// `link` Link to the service that will handle the items
+    pub(crate) fn start(sink: Si, link: Link<S>) -> SinkLink<I> {
         let (tx, rx) = mpsc::unbounded_channel();
         let sink_link = SinkLink(tx);
         let service = SinkService { sink, link, rx };
@@ -182,7 +210,9 @@ where
         sink_link
     }
 
-    pub async fn process(mut self) {
+    /// Processing loop for handling messages for feeding items
+    /// into the sink, sending, flushing etc.
+    async fn process(mut self) {
         while let Some(msg) = self.rx.recv().await {
             let result = match msg {
                 SinkMessage::Send(value) => self.sink.send(value).await,
@@ -192,8 +222,8 @@ where
             };
 
             if let Err(err) = result {
-                // If the error message couldn't be sent the service is stopped
                 if self.link.tx(ErrorEnvelope::new(err)).is_err() {
+                    // If the error message couldn't be sent the service is stopped
                     break;
                 }
             }

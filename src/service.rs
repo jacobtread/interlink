@@ -13,24 +13,26 @@ pub trait Service: Sized + Send + 'static {
     ///
     /// ```
     ///
-    /// use interlink::{service::Service, link::Link};
+    /// use interlink::prelude::*;
     ///
     /// struct MyService;
     ///
     /// // Implement the service trait
     /// impl Service for MyService {}
     ///
-    /// // Create the service
-    /// let service: MyService = MyService {};
-    /// // Start the service and obtain a link to it
-    /// let addr: Link<MyService> = service.start();
-    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     // Create the service
+    ///     let service: MyService = MyService {};
+    ///     // Start the service and obtain a link to it
+    ///     let addr: Link<MyService> = service.start();
+    /// }
     ///
     /// ```
     fn start(self) -> Link<Self> {
         let ctx = ServiceContext::new();
         let link = ctx.link();
-        self.spawn(ctx);
+        ctx.spawn(self);
         link
     }
 
@@ -40,7 +42,7 @@ pub trait Service: Sized + Send + 'static {
     /// service struct
     ///
     /// ```
-    /// use interlink::{service::Service, link::Link};
+    /// use interlink::prelude::*;
     ///
     /// struct First {
     ///     /// Link to spawned service
@@ -57,45 +59,32 @@ pub trait Service: Sized + Send + 'static {
     ///
     /// impl Service for Second {}
     ///
-    /// // Provide a closure which takes in the ctx    
-    /// First::create(|ctx| {
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     // Provide a closure which takes in the ctx    
+    ///     First::create(|ctx| {
     ///     
-    ///     // Create second which references the context
-    ///     let second: Second = Second {
-    ///         owner: ctx.link()
-    ///     }
-    ///     .start();
+    ///         // Create second which references the context
+    ///         let second: Second = Second {
+    ///             owner: ctx.link()
+    ///         }
+    ///         .start();
     ///     
-    ///     // Can now use the spawned value
-    ///     First { second }    
-    /// })
+    ///         // Can now use the spawned value
+    ///         First { second }    
+    ///     })
+    /// }
     ///
+    /// ```
     fn create<F>(action: F) -> Link<Self>
     where
         F: FnOnce(&mut ServiceContext<Self>) -> Self,
     {
         let mut ctx = ServiceContext::new();
-        let this = action(&mut ctx);
+        let service = action(&mut ctx);
         let link = ctx.link();
-        this.spawn(ctx);
+        ctx.spawn(service);
         link
-    }
-
-    /// Spawns this servuce  into a new tokio task
-    /// where it will then begin processing messages
-    ///
-    /// This should not be called manually use
-    /// `start` or `create` instead
-    ///
-    /// `ctx` The service context
-    fn spawn(mut self, mut ctx: ServiceContext<Self>) {
-        tokio::spawn(async move {
-            self.started(&mut ctx);
-
-            ctx.process(&mut self).await;
-
-            self.stopping();
-        });
     }
 
     /// Handler logic called when the service is stopping
