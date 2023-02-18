@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, oneshot};
 /// the `link()` fn on a service context
 ///
 /// Links are cheaply clonable and can be passed between threads
-pub struct Link<S: Service>(pub(crate) mpsc::UnboundedSender<ServiceMessage<S>>);
+pub struct Link<S>(pub(crate) mpsc::UnboundedSender<ServiceMessage<S>>);
 
 /// Clone implementation to clone inner sender for the link
 impl<S: Service> Clone for Link<S> {
@@ -60,7 +60,7 @@ where
     /// #[tokio::main]
     /// async fn main() {
     ///     let link = MyService {}.start();
-    ///     link.wait(|service, ctx| Box::pin(async move {
+    ///     link.do_wait(|service, ctx| Box::pin(async move {
     ///     
     ///     }))
     ///     .unwrap();
