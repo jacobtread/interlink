@@ -1,16 +1,14 @@
+<img src="assets/logo-128.png" width="128" height="auto">
+
+
 # Interlink
 
-> This project is in its very early infantcy but im creating it to 
-> extend an existing project of mine that is already using a similar
-> structure but that is not as well layed out
+> *Async framework*
 
-## What 
+**Interlink** runs on the [Tokio](https://tokio.rs/) async runtime and structures portions of your
+app using "Services" which can be communicated with using "Links" which allow sending messages to
+Services that can then be handled
 
-Interlink is a framework for structuring and communicating between sets of logic using messages
-similar to the Actix actors system.
+> 🚩 This project is in its very early infantcy so breaking changes are
+> expected and at this stage its not entirely feature complete or tested 
 
-Logic is seperated into "Services" which can be communicated with using "Links" that are able
-to send messages to services along with modifying their state. 
-
-Services are spawned on their own tokio task and each have a processing loop which awaits messages
-from the Links and also can process "wait" futures which require a mutable borrow over the service state
