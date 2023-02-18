@@ -1,4 +1,4 @@
-<img src="assets/logo-128.png" width="128" height="auto">
+<img src="assets/logo-180.png" width="180" height="auto">
 
 
 # Interlink
