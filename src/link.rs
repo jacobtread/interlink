@@ -378,6 +378,6 @@ where
     /// this message is recieved no more messages will be processed.
     pub fn stop(&self) {
         // Send the stop message to the service
-        self.tx(Box::new(StopEnvelope)).ok();
+        let _ = self.tx(Box::new(StopEnvelope));
     }
 }

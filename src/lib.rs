@@ -49,7 +49,7 @@ mod test {
                 println!("{}", service.test)
             })
         })
-        .ok();
+        .unwrap();
 
         let resp = link.send(TestMessage).await.unwrap();
         println!("GOT RESPONSE: {}", resp);

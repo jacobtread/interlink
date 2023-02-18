@@ -67,7 +67,7 @@ where
 {
     fn respond(self, _ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
         if let Some(tx) = tx {
-            tx.send(self.0).ok();
+            let _ = tx.send(self.0);
         }
     }
 }
@@ -165,7 +165,7 @@ where
         tokio::spawn(async move {
             let res = self.future.await;
             if let Some(tx) = tx {
-                tx.send(res).ok();
+                let _ = tx.send(res);
             }
         });
     }
@@ -266,9 +266,7 @@ where
     M: Message,
 {
     fn respond(self, ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
-        ctx.link
-            .tx(BoxedFutureEnvelope::new(self.producer, tx))
-            .ok();
+        let _ = ctx.link.tx(BoxedFutureEnvelope::new(self.producer, tx));
     }
 }
 

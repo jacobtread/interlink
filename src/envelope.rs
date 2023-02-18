@@ -49,7 +49,7 @@ where
         let result = ready!(this.fut.poll_unpin(cx));
 
         if let Some(tx) = this.tx.take() {
-            tx.send(result).ok();
+            let _ = tx.send(result);
         }
 
         std::task::Poll::Ready(())
@@ -175,7 +175,7 @@ where
     ) -> ServiceAction<'a> {
         let res = self.action.execute(service, ctx);
         if let Some(tx) = self.tx {
-            tx.send(res).ok();
+            let _ = tx.send(res);
         }
         ServiceAction::Continue
     }
