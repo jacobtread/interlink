@@ -6,7 +6,7 @@ pub trait Service: Sized + Send + 'static {
     /// Handler called before the service starts processing messages
     ///
     /// `ctx` The service context
-    fn started(&mut self, ctx: &mut ServiceContext<Self>) {}
+    fn started(&mut self, #[allow(unused)] ctx: &mut ServiceContext<Self>) {}
 
     /// Start an already created service and provides a link for
     /// communicating with the service

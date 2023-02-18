@@ -30,7 +30,7 @@ impl<'a, R> ExecuteFuture<'a, R>
 where
     R: Send + 'static,
 {
-    pub fn new(fut: BoxFuture<'a, R>, tx: Option<oneshot::Sender<R>>) -> BoxFuture<'a, ()> {
+    pub fn wrap(fut: BoxFuture<'a, R>, tx: Option<oneshot::Sender<R>>) -> BoxFuture<'a, ()> {
         Box::pin(ExecuteFuture { fut, tx })
     }
 }
@@ -252,7 +252,7 @@ where
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
         let fut = self.producer.produce(service, ctx);
-        ServiceAction::Execute(ExecuteFuture::new(fut, self.tx))
+        ServiceAction::Execute(ExecuteFuture::wrap(fut, self.tx))
     }
 }
 
