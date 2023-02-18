@@ -68,6 +68,12 @@ where
     pub fn link(&self) -> Link<S> {
         self.link.clone()
     }
+
+    /// Returns a reference to the shared link used by this context
+    /// for creating new links
+    pub fn shared_link(&self) -> &Link<S> {
+        &self.link
+    }
 }
 
 /// Module containing logic for working with streams

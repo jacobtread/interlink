@@ -113,7 +113,7 @@ where
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
         let res = service.handle(self.msg, ctx);
-        res.respond(ctx, self.tx);
+        res.respond(service, ctx, self.tx);
         ServiceAction::Continue
     }
 }

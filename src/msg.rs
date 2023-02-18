@@ -65,7 +65,12 @@ where
     S: Service,
     M: Message,
 {
-    fn respond(self, _ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
+    fn respond(
+        self,
+        _service: &mut S,
+        _ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<M::Response>>,
+    ) {
         if let Some(tx) = tx {
             let _ = tx.send(self.0);
         }
@@ -80,9 +85,58 @@ where
 {
     fn respond(
         self,
+        _service: &mut S,
         _ctx: &mut ServiceContext<S>,
         _tx: Option<oneshot::Sender<<M as Message>::Response>>,
     ) {
+    }
+}
+
+/// Response handler for optional handler types to handle
+/// not sending any response
+impl<S, M, R> ResponseHandler<S, M> for Option<R>
+where
+    R: ResponseHandler<S, M>,
+    S: Service,
+    M: Message,
+{
+    fn respond(
+        self,
+        service: &mut S,
+        ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<<M as Message>::Response>>,
+    ) {
+        match self {
+            Some(value) => value.respond(service, ctx, tx),
+            None => {}
+        }
+    }
+}
+
+/// Response handler for result response types where the
+/// error half of the result can be handled by a service
+/// error handler
+impl<S, M, R, E> ResponseHandler<S, M> for Result<R, E>
+where
+    R: ResponseHandler<S, M>,
+    S: Service + ErrorHandler<E>,
+    M: Message,
+    E: Send + 'static,
+{
+    fn respond(
+        self,
+        service: &mut S,
+        ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<<M as Message>::Response>>,
+    ) {
+        match self {
+            Ok(value) => {
+                value.respond(service, ctx, tx);
+            }
+            Err(err) => {
+                service.handle(err, ctx);
+            }
+        }
     }
 }
 
@@ -161,7 +215,12 @@ where
     S: Service,
     M: Message,
 {
-    fn respond(self, _ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
+    fn respond(
+        self,
+        _service: &mut S,
+        _ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<M::Response>>,
+    ) {
         tokio::spawn(async move {
             let res = self.future.await;
             if let Some(tx) = tx {
@@ -265,7 +324,12 @@ where
     S: Service,
     M: Message,
 {
-    fn respond(self, ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
+    fn respond(
+        self,
+        _service: &mut S,
+        ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<M::Response>>,
+    ) {
         let _ = ctx.link.tx(BoxedFutureEnvelope::new(self.producer, tx));
     }
 }
@@ -273,7 +337,12 @@ where
 /// Handler implementation for handling what happens
 /// with a response value
 pub trait ResponseHandler<S: Service, M: Message>: Send + 'static {
-    fn respond(self, ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>);
+    fn respond(
+        self,
+        service: &mut S,
+        ctx: &mut ServiceContext<S>,
+        tx: Option<oneshot::Sender<M::Response>>,
+    );
 }
 
 /// Handler implementation for allowing a service to handle a specific
