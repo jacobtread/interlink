@@ -89,20 +89,29 @@ where
     St: Stream + Send + Unpin + 'static,
     St::Item: Send + 'static,
 {
-    pub fn start(stream: St, link: Link<S>, stop: bool) {
+    /// Starts a new stream service
+    ///
+    /// `stream` The stream to accept items from
+    /// `link`   Link to the service that will handle the items
+    /// `stop`   If true the linked service will be stopped when there are no more items
+    pub(crate) fn start(stream: St, link: Link<S>, stop: bool) {
         let service = StreamService { stream, link, stop };
         tokio::spawn(service.process());
     }
 
-    pub async fn process(mut self) {
+    /// Processing loop for handling incoming messages from the
+    /// underlying stream and forwarding them on within stream
+    /// envelopes to the linked service
+    async fn process(mut self) {
         while let Some(msg) = self.stream.next().await {
             if self.link.tx(StreamEnvelope::new(msg)).is_err() {
-                // Assocated service has ended stop processing
+                // Linked service has ended stop processing
                 return;
             }
         }
 
         if self.stop {
+            // Stop the linked service because there are no more items
             self.link.stop();
         }
     }
