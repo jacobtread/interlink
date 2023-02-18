@@ -136,7 +136,7 @@ where
     /// async fn test() {
     ///     let link: Link<MyService> = MyService {}.start();
     ///     let value = link.wait(|service, ctx| Box::pin(async move {
-    ///         println!("Service waiting on processing loop")
+    ///         println!("Service waiting on processing loop");
     ///         sleep(Duration::from_millis(1000)).await;
     ///         println!("Action executed on service");
     ///         12
@@ -180,7 +180,7 @@ where
     /// async fn test() {
     ///     let link: Link<MyService> = MyService {}.start();
     ///     link.do_wait(|service, ctx| Box::pin(async move {
-    ///         println!("Service waiting on processing loop")
+    ///         println!("Service waiting on processing loop");
     ///         sleep(Duration::from_millis(1000)).await;
     ///         println!("Action executed on service");
     ///     }))

@@ -197,14 +197,6 @@ pub trait FutureProducer<S: Service>: Send {
 
 /// Implementation for using a closure which takes the service
 /// and context to produce a box future as a async producer
-///
-/// ```
-/// link.wait(|service, ctx| {
-///     Box::Pin(async move {
-///
-///     })
-/// })
-/// ```
 impl<S, F, R> FutureProducer<S> for F
 where
     S: Service,

@@ -62,17 +62,17 @@ pub trait Service: Sized + Send + 'static {
     /// #[tokio::main]
     /// async fn main() {
     ///     // Provide a closure which takes in the ctx    
-    ///     First::create(|ctx| {
+    ///     let link: Link<First> = First::create(|ctx| {
     ///     
     ///         // Create second which references the context
-    ///         let second: Second = Second {
+    ///         let second: Link<Second> = Second {
     ///             owner: ctx.link()
     ///         }
     ///         .start();
     ///     
     ///         // Can now use the spawned value
     ///         First { second }    
-    ///     })
+    ///     });
     /// }
     ///
     /// ```
