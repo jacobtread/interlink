@@ -8,11 +8,11 @@ use std::task::ready;
 use tokio::sync::oneshot;
 
 /// Type of a message used to communicate between services
-pub type ServiceMessage<S> = Box<dyn EnvelopeProxy<S>>;
+pub(crate) type ServiceMessage<S> = Box<dyn EnvelopeProxy<S>>;
 
 /// Actions that can be executed by the service processor
 /// after its handled an action
-pub enum ServiceAction<'a> {
+pub(crate) enum ServiceAction<'a> {
     /// Tell service to shutdown
     Stop,
     /// Continue handling the next message
@@ -21,7 +21,10 @@ pub enum ServiceAction<'a> {
     Execute(BoxFuture<'a, ()>),
 }
 
-pub(crate) struct ExecuteFuture<'a, R> {
+/// Type wrapping a boxed future for storing an optional
+/// oneshot sender which will be used to send the result
+/// of the future once its complete
+struct ExecuteFuture<'a, R> {
     fut: BoxFuture<'a, R>,
     tx: Option<oneshot::Sender<R>>,
 }
@@ -30,7 +33,12 @@ impl<'a, R> ExecuteFuture<'a, R>
 where
     R: Send + 'static,
 {
-    pub fn wrap(fut: BoxFuture<'a, R>, tx: Option<oneshot::Sender<R>>) -> BoxFuture<'a, ()> {
+    /// Wraps the provided future in  an execute future and
+    /// returns a new boxed future
+    ///
+    /// `fut` The future to wrap
+    /// `tx`  The optional response sender
+    pub(crate) fn wrap(fut: BoxFuture<'a, R>, tx: Option<oneshot::Sender<R>>) -> BoxFuture<'a, ()> {
         Box::pin(ExecuteFuture { fut, tx })
     }
 }
@@ -46,8 +54,11 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         let this = self.get_mut();
+
+        // Poll the underlying future
         let result = ready!(this.fut.poll_unpin(cx));
 
+        // Send the response if we have a sender
         if let Some(tx) = this.tx.take() {
             let _ = tx.send(result);
         }
@@ -58,7 +69,7 @@ where
 
 /// Proxy for handling the contents of a boxed envelope using the
 /// provided service and service context
-pub trait EnvelopeProxy<S: Service>: Send {
+pub(crate) trait EnvelopeProxy<S: Service>: Send {
     /// Proxy for handling different message envelope types
     /// under a single type. Result of this function is the
     /// action which the service should take next
@@ -228,6 +239,8 @@ where
     }
 }
 
+/// Enevelop wrapping a boxed future producer for handling
+/// executing a future on the processing loop
 pub(crate) struct BoxedFutureEnvelope<S, R> {
     producer: Box<dyn FutureProducer<S, Response = R>>,
     tx: Option<oneshot::Sender<R>>,
@@ -261,6 +274,8 @@ where
     }
 }
 
+/// Enevelop wrapping a future producer for handling
+/// executing a future on the processing loop
 pub(crate) struct FutureEnvelope<S, P>
 where
     S: Service,
@@ -302,14 +317,11 @@ where
 
 /// Envelope message used internally for providing messages
 /// recieved from streams to their respective stream handler
-pub(crate) struct StreamEnvelope<M> {
-    /// The actual message wrapped in this envelope
-    msg: M,
-}
+pub(crate) struct StreamEnvelope<M>(M);
 
 impl<M> StreamEnvelope<M> {
     pub fn new(msg: M) -> Box<StreamEnvelope<M>> {
-        Box::new(StreamEnvelope { msg })
+        Box::new(StreamEnvelope(msg))
     }
 }
 
@@ -324,7 +336,7 @@ where
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
-        service.handle(self.msg, ctx);
+        service.handle(self.0, ctx);
         ServiceAction::Continue
     }
 }
