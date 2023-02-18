@@ -77,13 +77,17 @@ impl Message for TextMessage {
 
 /// Implement a handler for the message type
 impl Handler<TextMessage> for Example {
+
+    /// Response type that the handler will use
+    type Response = MessageResponse<String>
+
     fn handle(
         &mut self, 
         msg: TextMessage, 
         ctx: &mut ServiceContext<Self>
-    ) -> String {
-        println!("Got message: {}", &msg.value)
-        msg.value
+    ) -> MessageResponse<String> {
+        println!("Got message: {}", &msg.value);
+        MessageResponse(msg.value)
     }
 }
 

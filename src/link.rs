@@ -156,7 +156,7 @@ where
         R: Send + 'static,
     {
         let (tx, rx) = oneshot::channel();
-        self.tx(FutureEnvelope::new(action, Some(tx)))?;
+        self.tx(FutureEnvelope::new(Box::new(action), Some(tx)))?;
         rx.await.map_err(|_| LinkError::Recv)
     }
 
@@ -194,7 +194,7 @@ where
             FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, R> + Send + 'static,
         R: Send + 'static,
     {
-        self.tx(FutureEnvelope::new(action, None))
+        self.tx(FutureEnvelope::new(Box::new(action), None))
     }
 
     /// Sends a message to the service. The service must implement a

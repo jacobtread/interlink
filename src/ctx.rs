@@ -12,7 +12,7 @@ pub struct ServiceContext<S: Service> {
     /// Reciever for handling incoming messages for the service
     rx: mpsc::UnboundedReceiver<ServiceMessage<S>>,
     /// The original link cloned to create other links to the service
-    link: Link<S>,
+    pub(crate) link: Link<S>,
 }
 
 impl<S> ServiceContext<S>
@@ -64,6 +64,7 @@ where
         self.rx.close()
     }
 
+    /// Creates and returns a link to the service
     pub fn link(&self) -> Link<S> {
         self.link.clone()
     }

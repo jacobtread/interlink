@@ -9,7 +9,7 @@ pub mod service;
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
+    use crate::{msg::MessageResponse, prelude::*};
     use std::time::Duration;
     use tokio::time::sleep;
 
@@ -26,12 +26,14 @@ mod test {
     }
 
     impl Handler<TestMessage> for TestService {
+        type Response = MessageResponse<String>;
+
         fn handle(
             &mut self,
             _msg: TestMessage,
             _ctx: &mut crate::ctx::ServiceContext<Self>,
-        ) -> String {
-            "got response from TestService handler".to_string()
+        ) -> MessageResponse<String> {
+            MessageResponse("got response from TestService handler".to_string())
         }
     }
     #[tokio::test]

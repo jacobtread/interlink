@@ -1,6 +1,6 @@
 use crate::{
     ctx::ServiceContext,
-    msg::{ErrorAction, ErrorHandler, Handler, Message, StreamHandler},
+    msg::{ErrorAction, ErrorHandler, Handler, Message, ResponseHandler, StreamHandler},
     service::Service,
 };
 use futures::{future::BoxFuture, Future, FutureExt};
@@ -21,7 +21,7 @@ pub enum ServiceAction<'a> {
     Execute(BoxFuture<'a, ()>),
 }
 
-struct ExecuteFuture<'a, R> {
+pub(crate) struct ExecuteFuture<'a, R> {
     fut: BoxFuture<'a, R>,
     tx: Option<oneshot::Sender<R>>,
 }
@@ -89,11 +89,12 @@ impl<M: Message> Envelope<M> {
     }
 }
 
-impl<S, M> EnvelopeProxy<S> for Envelope<M>
+impl<S, M, R> EnvelopeProxy<S> for Envelope<M>
 where
-    S: Handler<M>,
+    S: Handler<M, Response = R>,
     S: Service,
     M: Message,
+    R: ResponseHandler<S, M>,
 {
     fn handle<'a>(
         self: Box<Self>,
@@ -101,9 +102,7 @@ where
         ctx: &'a mut ServiceContext<S>,
     ) -> ServiceAction<'a> {
         let res = service.handle(self.msg, ctx);
-        if let Some(tx) = self.tx {
-            tx.send(res).ok();
-        }
+        res.respond(ctx, self.tx);
         ServiceAction::Continue
     }
 }
@@ -184,12 +183,19 @@ where
 
 /// Producer which takes mutable access to the service and its
 /// context and produces a future which makes use of them
-pub trait FutureProducer<S: Service>: Send {
+pub trait FutureProducer<S: Service>: Send + 'static {
     type Response: Send + 'static;
 
     /// Function for producing the actual future
     fn produce<'a>(
         self,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> BoxFuture<'a, Self::Response>;
+
+    /// Function for producing the future while boxed
+    fn produce_boxed<'a>(
+        self: Box<Self>,
         service: &'a mut S,
         ctx: &'a mut ServiceContext<S>,
     ) -> BoxFuture<'a, Self::Response>;
@@ -200,7 +206,7 @@ pub trait FutureProducer<S: Service>: Send {
 impl<S, F, R> FutureProducer<S> for F
 where
     S: Service,
-    for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, R> + Send,
+    for<'a> F: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, R> + Send + 'static,
     R: Send + 'static,
 {
     type Response = R;
@@ -211,6 +217,47 @@ where
         ctx: &'a mut ServiceContext<S>,
     ) -> BoxFuture<'a, Self::Response> {
         self(service, ctx)
+    }
+
+    fn produce_boxed<'a>(
+        self: Box<Self>,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> BoxFuture<'a, Self::Response> {
+        self(service, ctx)
+    }
+}
+
+pub(crate) struct BoxedFutureEnvelope<S, R> {
+    producer: Box<dyn FutureProducer<S, Response = R>>,
+    tx: Option<oneshot::Sender<R>>,
+}
+
+impl<S, R> BoxedFutureEnvelope<S, R>
+where
+    S: Service,
+    R: Send + 'static,
+{
+    pub(crate) fn new(
+        producer: Box<dyn FutureProducer<S, Response = R>>,
+        tx: Option<oneshot::Sender<R>>,
+    ) -> Box<BoxedFutureEnvelope<S, R>> {
+        Box::new(BoxedFutureEnvelope { producer, tx })
+    }
+}
+
+impl<S, R> EnvelopeProxy<S> for BoxedFutureEnvelope<S, R>
+where
+    S: Service,
+    R: Send + 'static,
+{
+    fn handle<'a>(
+        self: Box<Self>,
+        service: &'a mut S,
+        ctx: &'a mut ServiceContext<S>,
+    ) -> ServiceAction<'a> {
+        let fut = self.producer.produce_boxed(service, ctx);
+        ServiceAction::Execute(ExecuteFuture::wrap(fut, self.tx))
     }
 }
 
@@ -231,13 +278,10 @@ where
     P: FutureProducer<S>,
 {
     pub(crate) fn new(
-        action: P,
+        producer: P,
         tx: Option<oneshot::Sender<P::Response>>,
     ) -> Box<FutureEnvelope<S, P>> {
-        Box::new(FutureEnvelope {
-            producer: action,
-            tx,
-        })
+        Box::new(FutureEnvelope { producer, tx })
     }
 }
 
