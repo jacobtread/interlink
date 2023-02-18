@@ -1,15 +1,9 @@
-use std::marker::PhantomData;
-
 use crate::{
     ctx::ServiceContext,
-    envelope::{
-        BoxedFutureEnvelope, EnvelopeProxy, ExecuteFuture, FutureEnvelope, FutureProducer,
-        ServiceAction,
-    },
+    envelope::{BoxedFutureEnvelope, FutureProducer},
     service::Service,
 };
 use futures::future::BoxFuture;
-use std::future::Future;
 use tokio::sync::oneshot;
 
 /// Message type implemented by structures that can be passed
@@ -29,7 +23,7 @@ where
     S: Service,
     M: Message,
 {
-    fn respond(self, ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
+    fn respond(self, _ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
         if let Some(tx) = tx {
             tx.send(self.0).ok();
         }
@@ -53,16 +47,23 @@ where
 /// Response type from a handler containing a future that
 /// is to be spawned into a another task where the response
 /// will then be sent to the sender
-pub struct FutureResponse<M, Fut> {
-    future: Fut,
-    _marker: PhantomData<M>,
+pub struct FutureResponse<M: Message> {
+    future: BoxFuture<'static, M::Response>,
 }
 
-impl<S, M, Fut> ResponseHandler<S, M> for FutureResponse<M, Fut>
+impl<M> FutureResponse<M>
+where
+    M: Message,
+{
+    pub fn new(future: BoxFuture<'static, M::Response>) -> FutureResponse<M> {
+        FutureResponse { future }
+    }
+}
+
+impl<S, M> ResponseHandler<S, M> for FutureResponse<M>
 where
     S: Service,
     M: Message,
-    Fut: Future<Output = M::Response> + Send + 'static,
 {
     fn respond(self, _ctx: &mut ServiceContext<S>, tx: Option<oneshot::Sender<M::Response>>) {
         tokio::spawn(async move {
