@@ -106,9 +106,8 @@ where
         ctx: &mut ServiceContext<S>,
         tx: Option<oneshot::Sender<<M as Message>::Response>>,
     ) {
-        match self {
-            Some(value) => value.respond(service, ctx, tx),
-            None => {}
+        if let Some(value) = self {
+            value.respond(service, ctx, tx);
         }
     }
 }
