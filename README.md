@@ -22,7 +22,7 @@ Adding the following cargo dependency to include interlink in your project
 
 ```toml
 [dependencies]
-interlink = "0.1.0-alpha" 
+interlink = "0.1" 
 ```
 
 ## Starting a service
