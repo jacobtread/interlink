@@ -12,7 +12,7 @@ readme.workspace = true
 [dependencies]
 darling = "0.14"
 quote = "1"
-syn = { verison = "1", features = ["full"] }
+syn = { version = "1", features = ["full"] }
 
 [lib]
 proc-macro = true
