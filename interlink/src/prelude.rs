@@ -1,8 +1,8 @@
 /// Export for sink usage
-pub use crate::ctx::sink::SinkLink;
+pub use crate::ext::sink::SinkLink;
 
 /// Message and error action exports
-pub use crate::msg::{ErrorAction, Message};
+pub use crate::msg::{BoxFuture, ErrorAction, Message};
 
 /// Handler exports
 pub use crate::msg::{ErrorHandler, Handler, StreamHandler};
@@ -11,8 +11,7 @@ pub use crate::msg::{ErrorHandler, Handler, StreamHandler};
 pub use crate::link::{Link, LinkError, LinkResult, MessageLink};
 
 /// Service exports
-pub use crate::ctx::ServiceContext;
-pub use crate::service::Service;
+pub use crate::service::{Service, ServiceContext};
 
 /// Message type exports
 pub use crate::msg::{Fr, Mr, Sfr};

@@ -1,10 +1,8 @@
 use crate::{
-    ctx::ServiceContext,
     envelope::{Envelope, ExecutorEnvelope, FutureEnvelope, ServiceMessage, StopEnvelope},
-    msg::{Handler, Message},
-    service::Service,
+    msg::{BoxFuture, Handler, Message},
+    service::{Service, ServiceContext},
 };
-use futures::future::BoxFuture;
 use tokio::sync::{mpsc, oneshot};
 
 /// Links are used to send and receive messages from services
@@ -253,8 +251,6 @@ where
     ///
     /// #[derive(Service)]
     /// struct Test;
-    ///
-    /// impl Service for Test {}
     ///
     /// #[derive(Message)]
     /// struct MyMessage {

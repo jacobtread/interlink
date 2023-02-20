@@ -1,4 +1,6 @@
-use crate::{ctx::ServiceContext, link::Link};
+use crate::envelope::{ServiceAction, ServiceMessage};
+use crate::link::Link;
+use tokio::sync::mpsc;
 
 /// Trait implemented by structures that can be spawned as
 /// services and used by the app
@@ -82,4 +84,75 @@ pub trait Service: Sized + Send + 'static {
 
     /// Handler logic called when the service is stopping
     fn stopping(&mut self) {}
+}
+
+/// Backing context for a service which handles storing the
+/// reciever for messaging and the original link for spawning
+/// copies
+pub struct ServiceContext<S: Service> {
+    /// Reciever for handling incoming messages for the service
+    rx: mpsc::UnboundedReceiver<ServiceMessage<S>>,
+    /// The original link cloned to create other links to the service
+    link: Link<S>,
+}
+
+impl<S> ServiceContext<S>
+where
+    S: Service,
+{
+    /// Creates a new service context and the initial link
+    pub(crate) fn new() -> ServiceContext<S> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let link = Link(tx);
+
+        ServiceContext { rx, link }
+    }
+
+    /// Spawns this servuce  into a new tokio task
+    /// where it will then begin processing messages
+    ///
+    /// `service` The service
+    pub(crate) fn spawn(mut self, mut service: S) {
+        tokio::spawn(async move {
+            service.started(&mut self);
+
+            self.process(&mut service).await;
+
+            service.stopping();
+        });
+    }
+
+    /// Processing loop for the service handles recieved messages and
+    /// executing actions from the message handle results
+    ///
+    /// `service` The service this context is processing for
+    async fn process(&mut self, service: &mut S) {
+        while let Some(msg) = self.rx.recv().await {
+            let action = msg.handle(service, self);
+            match action {
+                ServiceAction::Stop => break,
+                ServiceAction::Continue => continue,
+                // Execute tasks that require blocking the processing
+                ServiceAction::Execute(fut) => fut.await,
+            }
+        }
+    }
+
+    /// Stop the context directly by closing the reciever the
+    /// reciever will drain any existing messages until there
+    /// are none remaining
+    pub fn stop(&mut self) {
+        self.rx.close()
+    }
+
+    /// Creates and returns a link to the service
+    pub fn link(&self) -> Link<S> {
+        self.link.clone()
+    }
+
+    /// Returns a reference to the shared link used by this context
+    /// for creating new links
+    pub fn shared_link(&self) -> &Link<S> {
+        &self.link
+    }
 }

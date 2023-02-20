@@ -1,10 +1,9 @@
 use crate::{
-    ctx::ServiceContext,
-    msg::{ErrorAction, ErrorHandler, Handler, Message, ResponseHandler, StreamHandler},
-    service::Service,
+    msg::{BoxFuture, ErrorAction, ErrorHandler, Handler, Message, ResponseHandler, StreamHandler},
+    service::{Service, ServiceContext},
 };
-use futures::{future::BoxFuture, Future, FutureExt};
 use std::task::ready;
+use std::{future::Future, pin::Pin};
 use tokio::sync::oneshot;
 
 /// Type of a message used to communicate between services
@@ -56,7 +55,7 @@ where
         let this = self.get_mut();
 
         // Poll the underlying future
-        let result = ready!(this.fut.poll_unpin(cx));
+        let result = ready!(Pin::new(&mut this.fut).poll(cx));
 
         // Send the response if we have a sender
         if let Some(tx) = this.tx.take() {

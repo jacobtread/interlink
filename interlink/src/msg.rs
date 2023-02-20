@@ -1,10 +1,13 @@
+use std::pin::Pin;
+
 use crate::{
-    ctx::ServiceContext,
     envelope::{BoxedFutureEnvelope, FutureProducer},
-    service::Service,
+    service::{Service, ServiceContext},
 };
-use futures::future::BoxFuture;
+use std::future::Future;
 use tokio::sync::oneshot;
+
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Message type implemented by structures that can be passed
 /// around as messages through envelopes
@@ -324,7 +327,9 @@ where
         ctx: &mut ServiceContext<S>,
         tx: Option<oneshot::Sender<M::Response>>,
     ) {
-        let _ = ctx.link.tx(BoxedFutureEnvelope::new(self.producer, tx));
+        let _ = ctx
+            .shared_link()
+            .tx(BoxedFutureEnvelope::new(self.producer, tx));
     }
 }
 
@@ -351,7 +356,8 @@ pub trait Handler<M: Message>: Service {
 }
 
 /// Handler for accepting streams of messages for a service
-/// from streams attached to the service
+/// from streams attached to the service see `attach_stream`
+/// on ServiceContext
 pub trait StreamHandler<M: Send>: Service {
     fn handle(&mut self, msg: M, ctx: &mut ServiceContext<Self>);
 }
