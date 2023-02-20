@@ -6,7 +6,12 @@ use crate::{
     msg::StreamHandler,
     service::{Service, ServiceContext},
 };
-use futures_util::stream::{Stream, StreamExt};
+use futures_core::stream::Stream;
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{ready, Context, Poll},
+};
 
 impl<S> ServiceContext<S>
 where
@@ -55,23 +60,37 @@ where
     /// `stop`   If true the linked service will be stopped when there are no more items
     pub(crate) fn start(stream: St, link: Link<S>, stop: bool) {
         let service = StreamService { stream, link, stop };
-        tokio::spawn(service.process());
+        tokio::spawn(service);
     }
+}
 
-    /// Processing loop for handling incoming messages from the
-    /// underlying stream and forwarding them on within stream
-    /// envelopes to the linked service
-    async fn process(mut self) {
-        while let Some(msg) = self.stream.next().await {
-            if self.link.tx(StreamEnvelope::new(msg)).is_err() {
+impl<S, St> Future for StreamService<S, St>
+where
+    S: Service + StreamHandler<St::Item>,
+    St: Stream + Send + Unpin + 'static,
+    St::Item: Send + 'static,
+{
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        loop {
+            let stream = Pin::new(&mut this.stream);
+            let msg = match ready!(stream.poll_next(cx)) {
+                Some(value) => value,
+                None => {
+                    if this.stop {
+                        // Stop the linked service because there are no more items
+                        this.link.stop();
+                    }
+                    return Poll::Ready(());
+                }
+            };
+
+            if this.link.tx(StreamEnvelope::new(msg)).is_err() {
                 // Linked service has ended stop processing
-                return;
+                return Poll::Ready(());
             }
-        }
-
-        if self.stop {
-            // Stop the linked service because there are no more items
-            self.link.stop();
         }
     }
 }

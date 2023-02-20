@@ -12,7 +12,9 @@ readme.workspace = true
 [dependencies]
 tokio = { version = "1", features = ["sync"] }
 interlink-derive = { version = "0.1.0", path = "../interlink-derive" }
-futures-util = { version = "^0.3", optional = true, features = ["sink"] }
+
+futures-sink = { version = "^0.3", optional = true }
+futures-core = { version = "^0.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -21,7 +23,7 @@ tokio = { version = "1", features = ["full"] }
 default = ["sinks", "streams"]
 
 # Feature for working with sinks
-sinks = ["dep:futures-util"]
+sinks = ["dep:futures-sink"]
 
 # Feature for working with streams
-streams = ["dep:futures-util"]
+streams = ["dep:futures-core"]
