@@ -1,5 +1,6 @@
 //! Module containing logic and context extensions
 //! for working with sinks
+
 use crate::{
     envelope::ErrorEnvelope,
     link::{Link, LinkError},
@@ -7,13 +8,12 @@ use crate::{
     service::{Service, ServiceContext},
 };
 use futures_sink::Sink;
-use tokio::sync::mpsc;
-
 use std::{
     future::Future,
     pin::Pin,
     task::{ready, Context, Poll},
 };
+use tokio::sync::mpsc;
 
 impl<S: Service> ServiceContext<S> {
     /// Attaches a sink to this service and provides a link to the
@@ -25,7 +25,7 @@ impl<S: Service> ServiceContext<S> {
         S: ErrorHandler<Si::Error>,
         Si: Sink<I> + Send + Unpin + 'static,
         Si::Error: Send + 'static,
-        I: Send + Unpin + 'static,
+        I: Send + 'static,
     {
         SinkService::start(sink, self.link())
     }
@@ -45,10 +45,8 @@ impl<I> Clone for SinkLink<I> {
 
 /// Messages used to communicate internally with the sink
 enum SinkMessage<I> {
-    /// Immediately write a message using the sink
-    Send(I),
-    /// Feed an item to be written later on flush
-    Feed(I),
+    /// Feed an item into the sink optionally flushing
+    Feed { item: I, flush: bool },
     /// Flush all the items in the sink
     Flush,
     /// Tells the sink to stop processing values
@@ -64,12 +62,14 @@ where
     /// to the underlying target as soon as the previous messages
     /// are written.
     ///
-    /// This does not required calling flush
+    /// This does not required calling flush.
+    ///
+    /// Any previous calls to feed will be flushed with this message
     ///
     /// `item` The item to write
     pub fn sink(&self, item: I) -> Result<(), LinkError> {
         self.0
-            .send(SinkMessage::Send(item))
+            .send(SinkMessage::Feed { item, flush: true })
             .map_err(|_| LinkError::Send)
     }
 
@@ -81,7 +81,7 @@ where
     /// `item` The item to feed
     pub fn feed(&self, item: I) -> Result<(), LinkError> {
         self.0
-            .send(SinkMessage::Feed(item))
+            .send(SinkMessage::Feed { item, flush: false })
             .map_err(|_| LinkError::Send)
     }
 
@@ -114,7 +114,7 @@ where
     S: Service + ErrorHandler<Si::Error>,
     Si: Sink<I> + Send + Unpin + 'static,
     Si::Error: Send + 'static,
-    I: Send + Unpin + 'static,
+    I: Send + 'static,
 {
     /// Starts a new sink service. You should attach this
     ///
@@ -133,53 +133,41 @@ where
         sink_link
     }
 
-    fn poll_inner(&mut self, cx: &mut Context<'_>) -> Poll<Result<bool, Si::Error>> {
-        if let Some(action) = &mut self.action {
-            let mut sink = Pin::new(&mut self.sink);
-            let flush = match action {
-                FutState::Feed { item, flush } => {
-                    if item.is_some() {
-                        ready!(sink.as_mut().poll_ready(cx))?;
-                        let item = item.take().expect("polled feed after completion");
-                        sink.as_mut().start_send(item)?;
-                    }
-                    *flush
+    /// Handlings polling the provided action on the provided sink
+    ///
+    /// `sink`   The sink to poll against
+    /// `state`  The state to poll
+    /// `cx`     The polling context
+    fn poll_sink(
+        mut sink: Pin<&mut Si>,
+        state: &mut FutState<I>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Si::Error>> {
+        let flush = match state {
+            FutState::Feed { item, flush } => {
+                if item.is_some() {
+                    // Poll the sink until its ready
+                    ready!(sink.as_mut().poll_ready(cx))?;
+
+                    // Send the item to the sink
+                    let item = item.take().expect("polled feed after completion");
+                    sink.as_mut().start_send(item)?;
                 }
-                FutState::Flush => true,
-            };
-
-            if flush {
-                ready!(sink.poll_flush(cx))?
+                *flush
             }
+            FutState::Flush => true,
+        };
 
-            self.action = None;
-            return Poll::Ready(Ok(true));
+        // Flush the sink if required
+        if flush {
+            sink.poll_flush(cx)
         } else {
-            let mut rx = Pin::new(&mut self.rx);
-            let msg = match ready!(rx.poll_recv(cx)) {
-                Some(value) => value,
-                // Nothing left to recv
-                None => return Poll::Ready(Ok(false)),
-            };
-
-            self.action = Some(match msg {
-                SinkMessage::Send(item) => FutState::Feed {
-                    item: Some(item),
-                    flush: true,
-                },
-                SinkMessage::Feed(item) => FutState::Feed {
-                    item: Some(item),
-                    flush: false,
-                },
-                SinkMessage::Flush => FutState::Flush,
-                // Nothing left to recv
-                SinkMessage::Stop => return Poll::Ready(Ok(false)),
-            });
-            Poll::Ready(Ok(true))
+            Poll::Ready(Ok(()))
         }
     }
 }
 
+/// State for what the service is currently doing
 enum FutState<I> {
     /// Feeding into the sink
     Feed {
@@ -192,12 +180,14 @@ enum FutState<I> {
     Flush,
 }
 
+impl<I> Unpin for FutState<I> {}
+
 impl<S, Si, I> Future for SinkService<S, Si, I>
 where
     S: Service + ErrorHandler<Si::Error>,
     Si: Sink<I> + Send + Unpin + 'static,
     Si::Error: Send + 'static,
-    I: Send + Unpin + 'static,
+    I: Send + 'static,
 {
     type Output = ();
 
@@ -205,15 +195,32 @@ where
         let this = self.get_mut();
 
         loop {
-            match ready!(this.poll_inner(cx)) {
-                Ok(true) => {}
-                Ok(false) => break,
-                Err(err) => {
+            this.action = if let Some(action) = &mut this.action {
+                let sink = Pin::new(&mut this.sink);
+                if let Err(err) = ready!(Self::poll_sink(sink, action, cx)) {
                     if this.link.tx(ErrorEnvelope::new(err)).is_err() {
                         // If the error message couldn't be sent the service is stopped
                         break;
                     }
                 }
+                None
+            } else {
+                let msg = match ready!(this.rx.poll_recv(cx)) {
+                    Some(value) => value,
+                    // Nothing left to recv
+                    None => break,
+                };
+
+                let state = match msg {
+                    SinkMessage::Feed { item, flush } => FutState::Feed {
+                        item: Some(item),
+                        flush,
+                    },
+                    SinkMessage::Flush => FutState::Flush,
+                    // Nothing left to recv stop processing
+                    SinkMessage::Stop => break,
+                };
+                Some(state)
             }
         }
 

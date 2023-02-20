@@ -62,6 +62,14 @@ where
         let service = StreamService { stream, link, stop };
         tokio::spawn(service);
     }
+
+    /// Pins the underlying stream and polls for the next
+    /// item in the stream
+    ///
+    /// `cx` The polling context
+    fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<St::Item>> {
+        Pin::new(&mut self.stream).poll_next(cx)
+    }
 }
 
 impl<S, St> Future for StreamService<S, St>
@@ -74,23 +82,20 @@ where
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
-        loop {
-            let stream = Pin::new(&mut this.stream);
-            let msg = match ready!(stream.poll_next(cx)) {
-                Some(value) => value,
-                None => {
-                    if this.stop {
-                        // Stop the linked service because there are no more items
-                        this.link.stop();
-                    }
-                    return Poll::Ready(());
-                }
-            };
 
-            if this.link.tx(StreamEnvelope::new(msg)).is_err() {
+        while let Some(item) = ready!(this.poll_next(cx)) {
+            if this.link.tx(StreamEnvelope::new(item)).is_err() {
                 // Linked service has ended stop processing
+                // early return to skip calling stop
                 return Poll::Ready(());
             }
         }
+
+        if this.stop {
+            // Stop the linked service because there are no more items
+            this.link.stop();
+        }
+
+        Poll::Ready(())
     }
 }
