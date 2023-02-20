@@ -128,9 +128,8 @@ where
     /// use std::time::Duration;
     /// use tokio::time::sleep;
     ///
+    /// #[derive(Service)]
     /// struct MyService;
-    ///
-    /// impl Service for MyService {}
     ///
     /// #[tokio::test]
     /// async fn test() {
@@ -172,9 +171,8 @@ where
     /// use std::time::Duration;
     /// use tokio::time::sleep;
     ///
+    /// #[derive(Service)]
     /// struct MyService;
-    ///
-    /// impl Service for MyService {}
     ///
     /// #[tokio::test]
     /// async fn test() {
@@ -205,24 +203,20 @@ where
     ///
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct Test;
     ///
-    /// impl Service for Test {}
-    ///
+    /// #[derive(Message)]
+    /// #[msg(rtype = "String")]
     /// struct MyMessage {
     ///     value: String,
     /// }
     ///
-    /// impl Message for MyMessage {
-    ///     /// The response type the handler will use
-    ///     type Response = String;
-    /// }
-    ///
     /// impl Handler<MyMessage> for Test {
-    ///     type Response = MessageResponse<MyMessage>;
+    ///     type Response = Mr<MyMessage>;
     ///
     ///     fn handle(&mut self, msg: MyMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
-    ///         MessageResponse(msg.value)
+    ///         Mr(msg.value)
     ///     }
     /// }
     ///
@@ -257,17 +251,14 @@ where
     ///
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct Test;
     ///
     /// impl Service for Test {}
     ///
+    /// #[derive(Message)]
     /// struct MyMessage {
     ///     value: String,
-    /// }
-    ///
-    /// impl Message for MyMessage {
-    ///     /// The response type the handler will use
-    ///     type Response = ();
     /// }
     ///
     /// impl Handler<MyMessage> for Test {
@@ -303,11 +294,10 @@ where
     /// ```
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct Test {
     ///     value: String
     /// }
-    ///
-    /// impl Service for Test {}
     ///
     /// #[tokio::test]
     /// async fn test() {
@@ -345,11 +335,10 @@ where
     /// ```
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct Test {
     ///     value: String
     /// }
-    ///
-    /// impl Service for Test {}
     ///
     /// #[tokio::test]
     /// async fn test() {

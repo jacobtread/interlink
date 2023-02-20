@@ -12,13 +12,10 @@ pub trait Service: Sized + Send + 'static {
     /// communicating with the service
     ///
     /// ```
-    ///
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct MyService;
-    ///
-    /// // Implement the service trait
-    /// impl Service for MyService {}
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -27,7 +24,6 @@ pub trait Service: Sized + Send + 'static {
     ///     // Start the service and obtain a link to it
     ///     let addr: Link<MyService> = service.start();
     /// }
-    ///
     /// ```
     fn start(self) -> Link<Self> {
         let ctx = ServiceContext::new();
@@ -44,20 +40,18 @@ pub trait Service: Sized + Send + 'static {
     /// ```
     /// use interlink::prelude::*;
     ///
+    /// #[derive(Service)]
     /// struct First {
     ///     /// Link to spawned service
     ///     second: Link<Second>,
     /// }
     ///
-    /// impl Service for First {}
-    ///
     /// /// Some other service which requires a link to our service
+    /// #[derive(Service)]
     /// struct Second {
     ///     /// Link to the service that owns this service
     ///     owner: Link<First>
     /// }
-    ///
-    /// impl Service for Second {}
     ///
     /// #[tokio::main]
     /// async fn main() {
@@ -74,7 +68,6 @@ pub trait Service: Sized + Send + 'static {
     ///         First { second }    
     ///     });
     /// }
-    ///
     /// ```
     fn create<F>(action: F) -> Link<Self>
     where

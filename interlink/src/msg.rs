@@ -20,25 +20,22 @@ pub trait Message: Send + 'static {
 /// ```
 /// use interlink::prelude::*;
 ///
+/// #[derive(Service)]
 /// struct Test { value: String };
 ///
-/// impl Service for Test {}
-///
+/// #[derive(Message)]
+/// #[msg(rtype="String")]
 /// struct TestMessage {
 ///     value: String,
 /// }
 ///
-/// impl Message for TestMessage {
-///     type Response = String;
-/// }
-///
 /// impl Handler<TestMessage> for Test {
-///     type Response = MessageResponse<TestMessage>;
+///     type Response = Mr<TestMessage>;
 ///
 ///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
 ///         self.value = msg.value;
 ///
-///         MessageResponse("Response".to_string())
+///         Mr("Response".to_string())
 ///     }
 /// }
 ///
@@ -58,9 +55,9 @@ pub trait Message: Send + 'static {
 ///
 /// }
 /// ```
-pub struct MessageResponse<M: Message>(pub M::Response);
+pub struct Mr<M: Message>(pub M::Response);
 
-impl<S, M> ResponseHandler<S, M> for MessageResponse<M>
+impl<S, M> ResponseHandler<S, M> for Mr<M>
 where
     S: Service,
     M: Message,
@@ -77,18 +74,22 @@ where
     }
 }
 
-/// Void response handler for not responding
+/// Void response handler for sending an empty unit
+/// response automatically after executing
 impl<S, M> ResponseHandler<S, M> for ()
 where
     S: Service,
-    M: Message,
+    M: Message<Response = ()>,
 {
     fn respond(
         self,
         _service: &mut S,
         _ctx: &mut ServiceContext<S>,
-        _tx: Option<oneshot::Sender<<M as Message>::Response>>,
+        tx: Option<oneshot::Sender<<M as Message>::Response>>,
     ) {
+        if let Some(tx) = tx {
+            let _ = tx.send(());
+        }
     }
 }
 
@@ -151,26 +152,23 @@ where
 /// use std::time::Duration;
 /// use tokio::time::sleep;
 ///
+/// #[derive(Service)]
 /// struct Test { value: String };
 ///
-/// impl Service for Test {}
-///
+/// #[derive(Message)]
+/// #[msg(rtype = "String")]
 /// struct TestMessage {
 ///     value: String,
 /// }
 ///
-/// impl Message for TestMessage {
-///     type Response = String;
-/// }
-///
 /// impl Handler<TestMessage> for Test {
-///     type Response = FutureResponse<TestMessage>;
+///     type Response = Fr<TestMessage>;
 ///
 ///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
 ///         // Additional logic can be run here before the future
 ///         // response is created
 ///
-///         FutureResponse::new(Box::pin(async move {
+///         Fr::new(Box::pin(async move {
 ///             // Some future that must be polled in another task
 ///             sleep(Duration::from_millis(1000)).await;
 ///
@@ -196,20 +194,20 @@ where
 ///
 /// }
 /// ```
-pub struct FutureResponse<M: Message> {
+pub struct Fr<M: Message> {
     future: BoxFuture<'static, M::Response>,
 }
 
-impl<M> FutureResponse<M>
+impl<M> Fr<M>
 where
     M: Message,
 {
-    pub fn new(future: BoxFuture<'static, M::Response>) -> FutureResponse<M> {
-        FutureResponse { future }
+    pub fn new(future: BoxFuture<'static, M::Response>) -> Fr<M> {
+        Fr { future }
     }
 }
 
-impl<S, M> ResponseHandler<S, M> for FutureResponse<M>
+impl<S, M> ResponseHandler<S, M> for Fr<M>
 where
     S: Service,
     M: Message,
@@ -239,26 +237,23 @@ where
 /// use std::time::Duration;
 /// use tokio::time::sleep;
 ///
+/// #[derive(Service)]
 /// struct Test { value: String };
 ///
-/// impl Service for Test {}
-///
+/// #[derive(Message)]
+/// #[msg(rtype = "String")]
 /// struct TestMessage {
 ///     value: String,
 /// }
 ///
-/// impl Message for TestMessage {
-///     type Response = String;
-/// }
-///
 /// impl Handler<TestMessage> for Test {
-///     type Response = ServiceFutureResponse<Self, TestMessage>;
+///     type Response = Sfr<Self, TestMessage>;
 ///
 ///     fn handle(&mut self, msg: TestMessage, ctx: &mut ServiceContext<Self>) -> Self::Response {
 ///         // Additional logic can be run here before the future
 ///         // response is created
 ///
-///         ServiceFutureResponse::new(move |service: &mut Test, ctx| {
+///         Sfr::new(move |service: &mut Test, ctx| {
 ///             Box::pin(async move {
 ///                 // Some future that must be polled on the service loop
 ///                 sleep(Duration::from_millis(1000)).await;
@@ -289,11 +284,11 @@ where
 ///
 /// }
 /// ```
-pub struct ServiceFutureResponse<S, M: Message> {
+pub struct Sfr<S, M: Message> {
     producer: Box<dyn FutureProducer<S, Response = M::Response>>,
 }
 
-impl<S, M> ServiceFutureResponse<S, M>
+impl<S, M> Sfr<S, M>
 where
     S: Service,
     M: Message,
@@ -304,13 +299,13 @@ where
     /// borrow
     ///
     /// `producer` The producer fn
-    pub fn new<P>(producer: P) -> ServiceFutureResponse<S, M>
+    pub fn new<P>(producer: P) -> Sfr<S, M>
     where
         for<'a> P: FnOnce(&'a mut S, &'a mut ServiceContext<S>) -> BoxFuture<'a, M::Response>
             + Send
             + 'static,
     {
-        ServiceFutureResponse {
+        Sfr {
             producer: Box::new(producer),
         }
     }
@@ -318,7 +313,7 @@ where
 
 /// The response handler for service future responses passes on
 /// the producer in an enevelope to be handled by the context
-impl<S, M> ResponseHandler<S, M> for ServiceFutureResponse<S, M>
+impl<S, M> ResponseHandler<S, M> for Sfr<S, M>
 where
     S: Service,
     M: Message,

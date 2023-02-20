@@ -33,11 +33,11 @@ In order to get a link to a service and for the service to run you will first ne
 ```rust
 use interlink::prelude::*;
 
-// Define your backing structure for the service
+/// Define your backing structure for the service you can use
+/// the service derive macro here or implement the trait to
+/// get access to the `started` and `stopping` hooks
+#[derive(Service)]
 struct Example;
-
-// Implement the service trait
-impl Service for Example {}
 
 // You must be within the tokio runtime to use interlink
 #[tokio::main]
@@ -59,35 +59,29 @@ is an example of how to create and send messages.
 use interlink::prelude::*;
 
 // Define your backing structure for the service
+#[derive(Service)]
 struct Example;
 
-// Implement the service trait
-impl Service for Example {}
-
-// The message struct
+// The message struct with a string response type
+#[derive(Message)]
+#[msg(rtype = "String")]
 struct TextMessage {
     value: String,
-}
-
-// Implement the message trait for messages
-impl Message for TextMessage {
-    // The type of response from handling this message
-    type Response = String;
 }
 
 /// Implement a handler for the message type
 impl Handler<TextMessage> for Example {
 
-    /// Response type that the handler will use
-    type Response = MessageResponse<TextMessage>
+    /// Basic response type which just responds with the value
+    type Response = Mr<TextMessage>
 
     fn handle(
         &mut self, 
         msg: TextMessage, 
         ctx: &mut ServiceContext<Self>
-    ) -> MessageResponse<TextMessage> {
+    ) -> Self::Response {
         println!("Got message: {}", &msg.value);
-        MessageResponse(msg.value)
+        Mr(msg.value)
     }
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "interlink"
+version = "0.1.0-alpha"
+description = "Framework for writing async code"
+
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme.workspace = true
+
+[dependencies]
+futures = "^0.3"
+tokio = { version = "1", features = ["full"] }
+interlink-derive = { version = "0.1.0", path = "../interlink-derive" }
