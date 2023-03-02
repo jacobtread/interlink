@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{future::ready, pin::Pin};
 
 use crate::{
     envelope::{BoxedFutureEnvelope, FutureProducer},
@@ -207,6 +207,12 @@ where
 {
     pub fn new(future: BoxFuture<'static, M::Response>) -> Fr<M> {
         Fr { future }
+    }
+
+    pub fn ready(value: M::Response) -> Fr<M> {
+        Fr {
+            future: Box::pin(ready(value)),
+        }
     }
 }
 
