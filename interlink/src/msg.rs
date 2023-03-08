@@ -209,6 +209,18 @@ where
         Fr { future }
     }
 
+    /// Creates a Fr wrapping the provided future creating a boxed
+    /// future from the provided future. Don't use this if you've
+    /// already boxed the future
+    pub fn new_box<F>(future: F) -> Fr<M>
+    where
+        F: Future<Output = M::Response> + Send + 'static,
+    {
+        Fr {
+            future: Box::pin(future),
+        }
+    }
+
     pub fn ready(value: M::Response) -> Fr<M> {
         Fr {
             future: Box::pin(ready(value)),

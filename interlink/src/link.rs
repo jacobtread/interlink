@@ -92,6 +92,11 @@ impl<S> Link<S>
 where
     S: Service,
 {
+    /// Checks whether the underlying sender is closed
+    pub fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
+
     /// Creates a message link type from this link type this allows you
     /// to have links to multiple different services that accept a
     /// specific message type
