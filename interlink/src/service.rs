@@ -1,3 +1,44 @@
+//! # Services
+//!
+//! Interlink uses services to represent asynchronous tasks that can hold their
+//! own state and communicate between each-other using messages and handlers.
+//!
+//! You can derive the service trait using its derive macro or implement it
+//! manually to get access to the [`Service::started`] and [`Service::stopping`]
+//! functions.
+//!
+//! With derive macro:
+//! ```
+//! use interlink::prelude::*;
+//!
+//! #[derive(Service)]
+//! struct MyService {
+//!     value: String,
+//! }
+//! ```
+//!
+//! Without derive macro. Both the started and stopping functions are optional
+//! ```
+//! use interlink::prelude::*;
+//!
+//! struct MyService {
+//!     value: String,
+//! }
+//!
+//! impl Service for MyService {
+//!     fn started(&mut self, ctx: &mut ServiceContext<Self>) {
+//!         println!("My service is started")
+//!     }
+//! }
+//! ```
+//!
+//! Then you can start your service using the [`Service::start`] function which will
+//! start the service in a tokio task and return you a [`Link`] to the service. Alternatively
+//! if you need access to the service context while creating your service you can use the
+//! [`Service::create`] function which provides the context.
+//!
+//! See [`Link`] for what to do from here
+
 use crate::envelope::{ServiceAction, ServiceMessage};
 use crate::link::Link;
 use tokio::sync::mpsc;
@@ -108,7 +149,7 @@ where
         ServiceContext { rx, link }
     }
 
-    /// Spawns this servuce  into a new tokio task
+    /// Spawns this service into a new tokio task
     /// where it will then begin processing messages
     ///
     /// `service` The service
@@ -151,7 +192,8 @@ where
     }
 
     /// Returns a reference to the shared link used by this context
-    /// for creating new links
+    /// for creating new links. You can use this to access the service
+    /// link without creating a clone of it
     pub fn shared_link(&self) -> &Link<S> {
         &self.link
     }

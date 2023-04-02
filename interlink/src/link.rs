@@ -1,3 +1,12 @@
+//! # Links
+//!
+//! Links are used to communicate with services. You can obtain a link by starting a service
+//! or using the [`ServiceContext::link`] function on the service context.
+//!
+//! You can also convert a link into a [`MessageLink`] which is a link based on a type of
+//! message rather than a type of service. This can be done using the [`Link::message_link`]
+//! function.
+
 use crate::{
     envelope::{Envelope, ExecutorEnvelope, FutureEnvelope, ServiceMessage, StopEnvelope},
     msg::{BoxFuture, Handler, Message},
@@ -52,7 +61,6 @@ impl<M> MessageLink<M>
 where
     M: Message,
 {
-    #[must_use = "Response will not be receieved unless awaited"]
     pub async fn send(&self, msg: M) -> LinkResult<M::Response> {
         let (tx, rx) = oneshot::channel();
         self.0.tx(msg, Some(tx))?;
@@ -86,6 +94,7 @@ pub enum LinkError {
     Recv,
 }
 
+/// Result type for results where the error is a [`LinkError`]
 pub type LinkResult<T> = Result<T, LinkError>;
 
 impl<S> Link<S>
@@ -150,7 +159,6 @@ where
     /// }
     ///
     /// ```
-    #[must_use = "Response will not be receieved unless awaited"]
     pub async fn wait<F, R>(&self, action: F) -> LinkResult<R>
     where
         for<'a> F:
@@ -235,7 +243,6 @@ where
     ///     assert_eq!(&resp, "Test123")
     /// }
     /// ```
-    #[must_use = "Response will not be receieved unless awaited"]
     pub async fn send<M>(&self, msg: M) -> LinkResult<M::Response>
     where
         M: Message,
@@ -316,7 +323,6 @@ where
     /// }
     ///
     /// ```
-    #[must_use = "Response will not be receieved unless awaited"]
     pub async fn exec<F, R>(&self, action: F) -> LinkResult<R>
     where
         F: FnOnce(&mut S, &mut ServiceContext<S>) -> R + Send + 'static,
