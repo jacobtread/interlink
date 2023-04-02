@@ -3,9 +3,11 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput, Ident, Type};
 
+/// Options for a message derive
 #[derive(FromDeriveInput, Default)]
 #[darling(default, attributes(msg), forward_attrs(allow, doc, cfg))]
 struct MessageOpts {
+    /// Response type for the message
     rtype: Option<Type>,
 }
 
