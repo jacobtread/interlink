@@ -1,5 +1,9 @@
-//! Module containing logic and context extensions
-//! for working with sinks
+//! # Sink Support
+//!
+//! This module provides support for attaching futures [`Sink`]'s to your
+//! services to handle sending messages easily
+//!
+//! Use [`ServiceContext::attach_sink`] to attach a sink to your service
 
 use crate::{
     envelope::ErrorEnvelope,
@@ -101,11 +105,14 @@ where
 /// Service for handling a Sink and its writing this is a
 /// lightweight service which has its own link type and doesn't
 /// implement normal service logic to be more lightweight
-
 struct SinkService<S, Si, I> {
+    /// The underlying sink to write to
     sink: Si,
+    /// The link to the attached service
     link: Link<S>,
+    /// Receiver for sink messages
     rx: mpsc::UnboundedReceiver<SinkMessage<I>>,
+    /// The current sink service action
     action: Option<FutState<I>>,
 }
 
@@ -173,7 +180,7 @@ enum FutState<I> {
     Feed {
         /// The item to feed
         item: Option<I>,
-        // Whether to flush after feeding the item
+        /// Whether to flush after feeding the item
         flush: bool,
     },
     /// Flushing the sink

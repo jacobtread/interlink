@@ -1,5 +1,12 @@
-//! Module containing logic and context extensions
-//! for working with streams
+//! # Stream Support
+//!
+//! This module provides support for attaching futures [`Stream`]'s to services
+//! in order to handle a stream of incoming messages.
+//!
+//! Use [`ServiceContext::attach_stream`] to attach a stream to your service and
+//! implement the [`StreamHandler`] trait on that service to handle a stream of
+//! messages
+
 use crate::{
     envelope::StreamEnvelope,
     link::Link,

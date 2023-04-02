@@ -1,5 +1,5 @@
-//! Sub modules of this module are extensions upon the ServiceContext
-//! that add additional features to the Context such as Stream handling
+//! Extensions providing supports for attaching streams and sinks to
+//! your services.
 
 #[cfg(feature = "sinks")]
 pub mod sink;
