@@ -1,5 +1,47 @@
+//! # Messages
+//!
+//! Messages are used to communicate with services. Messages are handled by [`Handler`]'s on services
+//! and must respond with a specific message type. The default derived message response type is the unit type.
+//! When handling a value you must choose a response type for how you intent to create the response value.
+//! See the different types below:
+//!
+//! ## Response Types
+//!
+//! - () Unit response type. This type responds with a empty value allowing you to return nothing from a handler
+//! - [`Mr`] Message response type. This is for when you are synchronously responding to a message.
+//! - [`Fr`] Future response type. This is for responding with a value that is created by awaiting a future. The future is spawned into a new tokio task
+//! - [`Sfr`] Service future response type. This is for when the response depends on awaiting a future that requires a mutable borrow over the service and/or the service context
+//!
+//! ## Messages
+//!
+//! Things that can be sent to services as messages must implement the [`Message`] trait. This trait can also be
+//! derived using the following derive macro.
+//!
+//! ```
+//! use interlink::prelude::*;
+//!
+//! #[derive(Message)]
+//! struct MyMessage {
+//!     value: String,
+//! }
+//! ```
+//!
+//! Without specifying the response type in the above message it will default to the () unit response type. To specify the
+//! response type you can use the syntax below
+//!
+//! ```
+//! use interlink::prelude::*;
+//!
+//! #[derive(Message)]
+//! #[msg(rtype = "String")]
+//! struct MyMessage {
+//!     value: String,
+//! }
+//! ```
+//!
+//! The rtype portion specifies the type of the response value.
+//!
 use std::{future::ready, pin::Pin};
-
 use crate::{
     envelope::{BoxedFutureEnvelope, FutureProducer},
     service::{Service, ServiceContext},
@@ -7,16 +49,42 @@ use crate::{
 use std::future::Future;
 use tokio::sync::oneshot;
 
+/// Type alias for a future that is pinned and boxed with a specific return type (T) and lifetime ('a)
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Message type implemented by structures that can be passed
-/// around as messages through envelopes
+/// around as messages through envelopes.
+///
+/// This trait can be derived using its derive macro
+/// ```
+/// use interlink::prelude::*;
+///
+/// #[derive(Message)]
+/// struct MyMessage {
+///     value: String,
+/// }
+/// ```
+///
+/// Without specifying the response type in the above message it will default to the () unit response type. To specify the
+/// response type you can use the syntax below
+///
+/// ```
+/// use interlink::prelude::*;
+///
+/// #[derive(Message)]
+/// #[msg(rtype = "String")]
+/// struct MyMessage {
+///     value: String,
+/// }
+/// ```
 pub trait Message: Send + 'static {
     /// The type of the response that handlers will produce
     /// when handling this message
     type Response: Send + 'static;
 }
 
+/// # Message Response
+///
 /// Response type from a handler which directly sends a response
 /// for a specific message
 ///
@@ -143,11 +211,13 @@ where
     }
 }
 
+/// # Future Response
+///
 /// Response type from a handler containing a future that
 /// is to be spawned into a another task where the response
 /// will then be sent to the sender. This should be used
 /// when the response is computed in a future that can run
-/// independently from the service
+/// independently from the service.
 ///
 ///
 /// ```
@@ -198,6 +268,7 @@ where
 /// }
 /// ```
 pub struct Fr<M: Message> {
+    /// The underlying future to await for a response
     future: BoxFuture<'static, M::Response>,
 }
 
@@ -205,6 +276,7 @@ impl<M> Fr<M>
 where
     M: Message,
 {
+    /// Creates a new future response from the provided boxed future.
     pub fn new(future: BoxFuture<'static, M::Response>) -> Fr<M> {
         Fr { future }
     }
@@ -221,6 +293,8 @@ where
         }
     }
 
+    /// Creates a new future response for a ready future containing a value
+    /// that is already ready.
     pub fn ready(value: M::Response) -> Fr<M> {
         Fr {
             future: Box::pin(ready(value)),
@@ -248,10 +322,15 @@ where
     }
 }
 
+/// # Service Future Response
+///
 /// Response type from a handler where a future must be
 /// awaited on the processing loop of the service. While
 /// the result of this future is being processed no other
-/// messages will be handled
+/// messages will be handled.
+///
+/// This provides a mutable borrow of the service and the service
+/// context to the future that is being awaited.
 ///
 /// ```
 /// use interlink::prelude::*;
@@ -306,6 +385,7 @@ where
 /// }
 /// ```
 pub struct Sfr<S, M: Message> {
+    /// The producer that will produce the function that must be awaited
     producer: Box<dyn FutureProducer<S, Response = M::Response>>,
 }
 
@@ -333,7 +413,7 @@ where
 }
 
 /// The response handler for service future responses passes on
-/// the producer in an enevelope to be handled by the context
+/// the producer in an envelope to be handled by the context
 impl<S, M> ResponseHandler<S, M> for Sfr<S, M>
 where
     S: Service,
@@ -365,11 +445,15 @@ pub trait ResponseHandler<S: Service, M: Message>: Send + 'static {
 /// Handler implementation for allowing a service to handle a specific
 /// message type
 pub trait Handler<M: Message>: Service {
-    /// The respose type this handler will use
+    /// The response type this handler will use
     type Response: ResponseHandler<Self, M>;
 
     /// Handler for processing the message using the current service
-    /// context and message
+    /// context and message. Will respond with the specified response type
+    ///
+    /// `self` The service handling the message
+    /// `msg`  The message that is being handled
+    /// `ctx`  Mutable borrow of the service context
     fn handle(&mut self, msg: M, ctx: &mut ServiceContext<Self>) -> Self::Response;
 }
 
@@ -377,16 +461,33 @@ pub trait Handler<M: Message>: Service {
 /// from streams attached to the service see `attach_stream`
 /// on ServiceContext
 pub trait StreamHandler<M: Send>: Service {
+    /// Handler for handling messages received from a stream
+    ///
+    /// `self` The service handling the message
+    /// `msg`  The message received
+    /// `ctx`  Mutable borrow of the service context
     fn handle(&mut self, msg: M, ctx: &mut ServiceContext<Self>);
 }
 
 /// Handler for accepting streams of messages for a service
 /// from streams attached to the service
 pub trait ErrorHandler<M: Send>: Service {
+
+    /// Handler for handling errors that occur in associated services
+    /// in cases such as errors while writing messages to a connected sink.
+    /// Responds with an [`ErrorAction`] which determines how the service
+    /// should react to the error
+    ///
+    /// `self` The service handling the error
+    /// `err`  The error that was encountered
+    /// `ctx`  Mutable borrow of the service context
     fn handle(&mut self, err: M, ctx: &mut ServiceContext<Self>) -> ErrorAction;
 }
 
+/// Actions that can be taken after handling an error.
 pub enum ErrorAction {
+    /// Continue processing
     Continue,
+    /// Stop processing
     Stop,
 }
