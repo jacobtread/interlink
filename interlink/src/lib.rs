@@ -47,7 +47,7 @@
 //! impl Handler<TextMessage> for Example {
 //!
 //!     /// Basic response type which just responds with the value
-//!     type Response = Mr<TextMessage>
+//!     type Response = Mr<TextMessage>;
 //!
 //!     fn handle(
 //!         &mut self,

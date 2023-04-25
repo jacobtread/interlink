@@ -1,6 +1,6 @@
 [package]
 name = "interlink"
-version = "0.1.4"
+version = "0.1.5"
 description = "Framework for writing async code"
 
 edition.workspace = true
@@ -11,7 +11,7 @@ readme.workspace = true
 
 [dependencies]
 tokio = { version = "1", features = ["sync"] }
-interlink-derive = { version = "0.1.0", path = "../interlink-derive" }
+interlink-derive = { version = "0.1", path = "../interlink-derive" }
 
 futures-sink = { version = "^0.3", optional = true }
 futures-core = { version = "^0.3", optional = true }
