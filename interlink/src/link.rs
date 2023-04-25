@@ -7,6 +7,8 @@
 //! message rather than a type of service. This can be done using the [`Link::message_link`]
 //! function.
 
+use std::{error::Error, fmt::Display};
+
 use crate::{
     envelope::{Envelope, ExecutorEnvelope, FutureEnvelope, ServiceMessage, StopEnvelope},
     msg::{BoxFuture, Handler, Message},
@@ -93,6 +95,17 @@ pub enum LinkError {
     /// Failed to receive response back from service
     Recv,
 }
+
+impl Display for LinkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LinkError::Send => f.write_str("Failed to send to link"),
+            LinkError::Recv => f.write_str("Failed to receive from link"),
+        }
+    }
+}
+
+impl Error for LinkError {}
 
 /// Result type for results where the error is a [`LinkError`]
 pub type LinkResult<T> = Result<T, LinkError>;
