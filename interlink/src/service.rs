@@ -39,17 +39,22 @@
 //!
 //! See [`Link`] for what to do from here
 
+use std::time::Duration;
+
 use crate::envelope::{ServiceAction, ServiceMessage};
 use crate::link::Link;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio::time::sleep;
 
 /// Trait implemented by structures that can be spawned as
 /// services and used by the app
+#[allow(unused_variables)]
 pub trait Service: Sized + Send + 'static {
     /// Handler called before the service starts processing messages
     ///
     /// `ctx` The service context
-    fn started(&mut self, #[allow(unused)] ctx: &mut ServiceContext<Self>) {}
+    fn started(&mut self, ctx: &mut ServiceContext<Self>) {}
 
     /// Start an already created service and provides a link for
     /// communicating with the service
@@ -196,5 +201,92 @@ where
     /// link without creating a clone of it
     pub fn shared_link(&self) -> &Link<S> {
         &self.link
+    }
+
+    /// Executes the provided `action` function on the service and service context
+    /// after the provided `duration` has elapsed. This function returns a [`JoinHandle`]
+    /// which you can use to stop the task by calling .abort() on the handle
+    ///
+    /// ```
+    /// use interlink::prelude::*;
+    /// use std::time::Duration;
+    /// use tokio::time::sleep;
+    ///
+    /// struct Test {
+    ///     value: u32,
+    /// }
+    ///
+    /// impl Service for Test {
+    ///     fn started(&mut self, ctx: &mut ServiceContext<Self>) {
+    ///         ctx.run_later(Duration::from_secs(1), |service, _ctx| {
+    ///             println!("Hello 1 second later from the service: {}", service.value);
+    ///             service.value += 1;
+    ///         });
+    ///     }
+    /// }
+    ///
+    /// #[tokio::test]
+    /// async fn test() {
+    ///    let link = Test { value: 1 }.start();
+    ///
+    ///    sleep(Duration::from_secs(5)).await;
+    /// }
+    /// ```
+    pub fn run_later<F>(&self, duration: Duration, action: F) -> JoinHandle<()>
+    where
+        F: FnOnce(&mut S, &mut ServiceContext<S>) + Send + 'static,
+    {
+        let link = self.link();
+        tokio::spawn(async move {
+            sleep(duration).await;
+            let _ = link.do_exec(action);
+        })
+    }
+
+    /// Executes the provided `action` function on the service and service context
+    /// every time the `duration` is elapsed. This function returns a [`JoinHandle`]
+    /// which you can use to stop the task by calling .abort() on the handle
+    ///
+    /// ```
+    /// use interlink::prelude::*;
+    /// use std::time::Duration;
+    /// use tokio::time::sleep;
+    ///
+    /// struct Test {
+    ///     value: u32,
+    /// }
+    ///
+    /// impl Service for Test {
+    ///     fn started(&mut self, ctx: &mut ServiceContext<Self>) {
+    ///         ctx.run_interval(Duration::from_secs(1), |service, _ctx| {
+    ///             println!(
+    ///                 "Hello at 1 second interval from the service: {}",
+    ///                 service.value
+    ///              );
+    ///             service.value += 1;
+    ///         });
+    ///     }
+    /// }
+    ///
+    /// #[tokio::test]
+    /// async fn test() {
+    ///    let link = Test { value: 1 }.start();
+    ///
+    ///    sleep(Duration::from_secs(15)).await;
+    /// }
+    /// ```
+    pub fn run_interval<F>(&self, duration: Duration, action: F) -> JoinHandle<()>
+    where
+        F: FnOnce(&mut S, &mut ServiceContext<S>) + Clone + Send + 'static,
+    {
+        let link = self.link();
+        tokio::spawn(async move {
+            loop {
+                sleep(duration).await;
+                if link.do_exec(action.clone()).is_err() {
+                    break;
+                }
+            }
+        })
     }
 }
