@@ -2,6 +2,15 @@
 //!
 //! Interlink is an async framework
 //!
+//! ## Using Interlink
+//!
+//! Adding the following cargo dependency to include interlink in your project
+//!
+//! ```toml
+//! [dependencies]
+//! interlink = "0.1"
+//! ```
+//!
 //! # Starting a service
 //!
 //! In order to get a link to a service and for the service to run you will first need to start the service
